@@ -197,8 +197,8 @@ class RLAgent(BaseAgent):
             "timesteps": num_timesteps,
             "mean_reward": np.mean(callback.episode_rewards).item() if callback.episode_rewards else 0,
             "mean_return": np.mean(callback.episode_returns) if callback.episode_returns else 0,
-            "episode_rewards": [r.item() for r in callback.episode_rewards],
-            "episode_returns": [r.item() for r in callback.episode_returns],
+            "episode_rewards": [float(r) for r in callback.episode_rewards],
+            "episode_returns": [float(r) for r in callback.episode_returns],
             "mean_episode_length": np.mean(callback.episode_lengths).item() if callback.episode_lengths else 0,
         }
     
