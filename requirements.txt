@@ -1,0 +1,9 @@
+numpy>=1.22.0
+pandas>=1.4.0
+stable-baselines3>=2.0.0  # Updated for Gymnasium support
+gymnasium>=0.28.1  # Replacing gym
+pyyaml>=6.0
+matplotlib>=3.5.0
+scikit-learn>=1.0.0
+torch>=1.11.0
+shimmy>=0.2.1  # For compatibility layers if needed
