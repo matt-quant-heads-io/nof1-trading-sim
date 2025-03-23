@@ -17,11 +17,11 @@ class HistoricalDataReader:
         self.logger = logging.getLogger(__name__)
         self.config = config
         
-        self.data_path = config.get('data.historical.data_path')
-        self.feature_columns = config.get('data.historical.feature_columns')
-        self.timestamp_column = config.get('data.historical.timestamp_column')
-        self.normalize_features = config.get('data.historical.normalize_features', True)
-        self.train_test_split = config.get('data.historical.train_test_split', 0.8)
+        self.data_path = self.config.data.historical.data_path
+        self.feature_columns = self.config.data.historical.feature_columns 
+        self.timestamp_column = self.config.data.historical.timestamp_column 
+        self.normalize_features = self.config.data.historical.normalize_features 
+        self.train_test_split = self.config.data.historical.train_test_split 
         
         self.data = None
         self.train_data = None
@@ -37,6 +37,7 @@ class HistoricalDataReader:
         """
         try:
             self.logger.info(f"Loading data from {self.data_path}")
+            # import pdb; pdb.set_trace()
             df = pd.read_csv(self.data_path)
             
             # Ensure timestamp column exists

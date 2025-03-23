@@ -29,29 +29,30 @@ class TradingEnvironment(gym.Env):
         self.config = config
         
         # System configuration
-        self.mode = self._get_config_value('system.mode', 'historical')
+        self.mode = self.config.system.mode
         
         # Environment configuration
-        self.max_steps = self._get_config_value('simulation.max_steps_per_episode', 1000)
-        self.warmup_steps = self._get_config_value('simulation.warmup_steps', 100)
-        self.initial_capital = self._get_config_value('simulation.initial_capital', 10000.0)
-        self.transaction_fee_pct = self._get_config_value('simulation.transaction_fee_pct', 0.001)
+        self.max_steps = self.config.simulation.max_steps_per_episode
+        self.warmup_steps = self.config.simulation.warmup_steps
+
+        self.initial_capital = self.config.simulation.initial_capital
+        self.transaction_fee_pct = self.config.simulation.transaction_fee_pct
         
         # Agent configuration
-        self.max_position = self._get_config_value('agents.positions.max_position', 10)
-        self.min_position = self._get_config_value('agents.positions.min_position', -10)
+        self.max_position = self.config.agents.positions.max_position
+        self.min_position = self.config.agents.positions.min_position
         
         # Setup feature columns
-        self.feature_columns = self._get_config_value('data.historical.feature_columns', [])
+        self.feature_columns = self.config.data.historical.feature_columns
         
         # Setup spaces
-        obs_space_type = self._get_config_value('agents.observation_space.type', 'Box')
-        action_space_type = self._get_config_value('agents.action_space.type', 'Discrete')
+        obs_space_type = self.config.agents.observation_space.type 
+        action_space_type = self.config.agents.action_space.type
         
         if obs_space_type == 'Box':
-            obs_low = self._get_config_value('agents.observation_space.low', -10.0)
-            obs_high = self._get_config_value('agents.observation_space.high', 10.0)
-            obs_shape = self._get_config_value('agents.observation_space.shape', [len(self.feature_columns) + 1])  # +1 for position
+            obs_low = self.config.agents.observation_space.low
+            obs_high = self.config.agents.observation_space.high
+            obs_shape = self.config.agents.observation_space.shape  # +1 for position
             
             self.observation_space = spaces.Box(
                 low=float(obs_low),
@@ -63,7 +64,7 @@ class TradingEnvironment(gym.Env):
             raise ValueError(f"Unsupported observation space type: {obs_space_type}")
         
         if action_space_type == 'Discrete':
-            action_n = self._get_config_value('agents.action_space.n', 3)  # 0: hold, 1: buy, 2: sell
+            action_n = self.config.agents.action_space.n # 0: hold, 1: buy, 2: sell
             self.action_space = spaces.Discrete(action_n)
         else:
             raise ValueError(f"Unsupported action space type: {action_space_type}")
@@ -146,6 +147,7 @@ class TradingEnvironment(gym.Env):
             if self.current_step < len(self.data):
                 self._update_orderbook_historical(self.current_step)
         
+        
         # Get initial observation
         observation = self._get_observation()
         
@@ -187,6 +189,7 @@ class TradingEnvironment(gym.Env):
         
         # Get new observation
         observation = self._get_observation()
+        print(f"observation: {observation}")
         
         # Calculate reward
         reward = self._calculate_reward(action, info)
@@ -275,6 +278,7 @@ class TradingEnvironment(gym.Env):
         
         # Update position and capital
         new_position = self.position + position_change
+        entry_or_exit = "entry" if new_position != 0 else "exit"
         
         # Check position limits
         if new_position > self.max_position:
@@ -287,7 +291,6 @@ class TradingEnvironment(gym.Env):
             self.logger.debug(f"Position limit reached (min): {self.min_position}")
         
         # If position change was adjusted, recalculate transaction cost
-        # import pdb; pdb.set_trace()
         if position_change != (action == 1) - (action == 2):
             transaction_cost = abs(position_change * execution_price * self.transaction_fee_pct)
         
@@ -313,6 +316,7 @@ class TradingEnvironment(gym.Env):
                 "position_change": position_change,
                 "execution_price": execution_price,
                 "transaction_cost": transaction_cost,
+                "entry_or_exit": entry_or_exit
             }
             self.episode_trades.append(trade_info)
         
@@ -412,6 +416,7 @@ class TradingEnvironment(gym.Env):
         
         # Debug logging
         self.logger.debug(f"Orderbook data: {orderbook_data}")
+        # print(f"Orderbook data: {orderbook_data}")
         
         # Store the current state
         self.current_state = orderbook_data

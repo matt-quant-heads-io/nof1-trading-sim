@@ -1,12 +1,113 @@
 import os
 import yaml
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
+
+
+class ConfigAccessor:
+    """
+    Helper class to access nested configuration values using attribute notation.
+    Allows for more intuitive access like config.system.mode instead of config.get('system.mode')
+    """
+    def __init__(self, config_dict: Dict[str, Any]):
+        self._config = config_dict
+        
+    def __getattr__(self, name: str) -> Any:
+        """
+        Access configuration values using attribute notation.
+        
+        Args:
+            name: Configuration key
+            
+        Returns:
+            Configuration value or another ConfigAccessor for nested dictionaries
+        """
+        if name in self._config:
+            value = self._config[name]
+            if isinstance(value, dict):
+                return ConfigAccessor(value)
+            return value
+        raise AttributeError(f"Configuration has no attribute '{name}'")
+    
+    def __getitem__(self, key: str) -> Any:
+        """
+        Access configuration values using dictionary notation.
+        
+        Args:
+            key: Configuration key
+            
+        Returns:
+            Configuration value
+        """
+        return self._config[key]
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get configuration value with a default fallback.
+        
+        Args:
+            key: Configuration key
+            default: Default value if key doesn't exist
+            
+        Returns:
+            Configuration value or default
+        """
+        return self._config.get(key, default)
+    
+    def items(self):
+        """
+        Return key-value pairs from the configuration.
+        
+        Returns:
+            Iterator over key-value pairs
+        """
+        return self._config.items()
+    
+    def keys(self):
+        """
+        Return keys from the configuration.
+        
+        Returns:
+            Iterator over keys
+        """
+        return self._config.keys()
+    
+    def values(self):
+        """
+        Return values from the configuration.
+        
+        Returns:
+            Iterator over values
+        """
+        return self._config.values()
+    
+    def __contains__(self, key: str) -> bool:
+        """
+        Check if a key exists in the configuration.
+        
+        Args:
+            key: Configuration key
+            
+        Returns:
+            True if key exists, False otherwise
+        """
+        return key in self._config
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the configuration accessor back to a dictionary.
+        
+        Returns:
+            Dictionary representation of the configuration
+        """
+        return self._config
+
 
 class ConfigManager:
     """
     Manages configuration for the trading simulation system.
-    Loads configuration from YAML files and provides access to configuration parameters.
+    Loads configuration from YAML files and provides access to configuration parameters 
+    using both attribute notation and dictionary-style access.
     """
     def __init__(self, config_path: str = None):
         """
@@ -17,7 +118,8 @@ class ConfigManager:
         """
         self.logger = logging.getLogger(__name__)
         self.config_path = config_path or os.path.join("config", "default_config.yaml")
-        self.config = self._load_config()
+        self._config_dict = self._load_config()
+        self.config = ConfigAccessor(self._config_dict)
         
     def _load_config(self) -> Dict[str, Any]:
         """
@@ -35,19 +137,19 @@ class ConfigManager:
             self.logger.error(f"Failed to load configuration from {self.config_path}: {e}")
             raise
     
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key_path: str, default: Any = None) -> Any:
         """
-        Get configuration value for the given key.
+        Get configuration value for the given key path.
         
         Args:
-            key: Configuration key in dot notation (e.g., 'system.mode')
+            key_path: Configuration key in dot notation (e.g., 'system.mode')
             default: Default value to return if key is not found
             
         Returns:
             Configuration value or default
         """
-        keys = key.split('.')
-        value = self.config
+        keys = key_path.split('.')
+        value = self._config_dict
         
         for k in keys:
             if isinstance(value, dict) and k in value:
@@ -57,16 +159,16 @@ class ConfigManager:
                 
         return value
     
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key_path: str, value: Any) -> None:
         """
-        Set configuration value for the given key.
+        Set configuration value for the given key path.
         
         Args:
-            key: Configuration key in dot notation (e.g., 'system.mode')
+            key_path: Configuration key in dot notation (e.g., 'system.mode')
             value: Value to set
         """
-        keys = key.split('.')
-        config = self.config
+        keys = key_path.split('.')
+        config = self._config_dict
         
         for i, k in enumerate(keys[:-1]):
             if k not in config:
@@ -74,6 +176,9 @@ class ConfigManager:
             config = config[k]
                 
         config[keys[-1]] = value
+        
+        # Refresh the accessor
+        self.config = ConfigAccessor(self._config_dict)
     
     def save(self, path: Optional[str] = None) -> None:
         """
@@ -86,7 +191,7 @@ class ConfigManager:
         
         try:
             with open(save_path, 'w') as f:
-                yaml.dump(self.config, f, default_flow_style=False)
+                yaml.dump(self._config_dict, f, default_flow_style=False)
             self.logger.info(f"Saved configuration to {save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save configuration to {save_path}: {e}")
@@ -106,5 +211,54 @@ class ConfigManager:
                 else:
                     d[k] = v
         
-        _recursive_update(self.config, config_dict)
+        _recursive_update(self._config_dict, config_dict)
+        # Refresh the accessor
+        self.config = ConfigAccessor(self._config_dict)
         self.logger.info("Merged configuration with provided dictionary")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Return the full configuration as a dictionary.
+        
+        Returns:
+            Dictionary containing all configuration parameters
+        """
+        return self._config_dict
+    
+    def keys(self, nested: bool = False) -> List[str]:
+        """
+        Get the top-level keys or all nested keys in the configuration.
+        
+        Args:
+            nested: If True, returns all nested keys with dot notation
+            
+        Returns:
+            List of keys
+        """
+        if not nested:
+            return list(self._config_dict.keys())
+        
+        def _get_nested_keys(d, prefix=''):
+            keys = []
+            for k, v in d.items():
+                key = f"{prefix}.{k}" if prefix else k
+                keys.append(key)
+                if isinstance(v, dict):
+                    keys.extend(_get_nested_keys(v, key))
+            return keys
+        
+        return _get_nested_keys(self._config_dict)
+    
+    def __getattr__(self, name: str) -> Any:
+        """
+        Allow direct attribute access to top-level config items.
+        
+        Args:
+            name: Attribute name
+            
+        Returns:
+            Configuration value or AttributeError
+        """
+        if name in self._config_dict:
+            return self.config.__getattr__(name)
+        raise AttributeError(f"ConfigManager has no attribute '{name}'")

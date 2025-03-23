@@ -31,9 +31,9 @@ class BacktestEngine:
         self.agent = agent
         
         # Backtesting configuration
-        self.metrics_list = self._get_config_value('backtesting.metrics', [])
-        self.results_dir = self._get_config_value('backtesting.results_dir', './results')
-        self.plot_results = self._get_config_value('backtesting.plot_results', True)
+        self.metrics_list = self.config.backtesting.metrics 
+        self.results_dir = self.config.backtesting.results_dir
+        self.plot_results = self.config.backtesting.plot_results
         
         # Ensure results directory exists
         os.makedirs(self.results_dir, exist_ok=True)
@@ -45,28 +45,6 @@ class BacktestEngine:
         self.returns = []
         self.positions = []
         self.timestamps = []
-        
-    def _get_config_value(self, path: str, default: Any = None) -> Any:
-        """
-        Get a value from the config using dot notation.
-        
-        Args:
-            path: Path to the config value using dot notation (e.g., 'backtesting.metrics')
-            default: Default value to return if the path doesn't exist
-            
-        Returns:
-            The config value or the default
-        """
-        keys = path.split('.')
-        value = self.config
-        
-        for key in keys:
-            if isinstance(value, dict) and key in value:
-                value = value[key]
-            else:
-                return default
-                
-        return value
         
     def run(self, num_episodes: int = 1) -> Dict[str, Any]:
         """

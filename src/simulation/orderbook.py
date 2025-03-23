@@ -16,16 +16,16 @@ class OrderBook:
         self.logger = logging.getLogger(__name__)
         self.config = config
         
-        self.tick_size = config.get('simulation.tick_size', 0.01)
-        self.slippage_model = config.get('simulation.slippage_model', 'fixed')
-        self.slippage_value = config.get('simulation.slippage_value', 0.0001)
+        
+        self.tick_size = self.config.simulation.tick_size 
+        self.slippage_model = self.config.simulation.slippage_model 
+        self.slippage_value = self.config.simulation.slippage_value 
         
         # Current state of the order book
-        
         self.current_state = {}
         
-        self.feature_columns = config["data"]["historical"]["feature_columns"]
-        # import pdb; pdb.set_trace()
+        # Access nested config values properly
+        self.feature_columns = self.config.data.historical.feature_columns 
         print(f"self.feature_columns: {self.feature_columns}")
         
         # Track last trade price
@@ -159,6 +159,7 @@ class OrderBook:
         Returns:
             Dictionary containing order book state
         """
+        print(f"self.current_state: {self.current_state}")
         return self.current_state.copy()
     
     def get_state_array(self) -> np.ndarray:
