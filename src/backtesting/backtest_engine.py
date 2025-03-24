@@ -46,7 +46,7 @@ class BacktestEngine:
         self.positions = []
         self.timestamps = []
         
-    def run(self, num_episodes: int = 1) -> Dict[str, Any]:
+    def run(self, num_episodes: int = 1, num_steps_per_episode: int = 100) -> Dict[str, Any]:
         """
         Run the backtest.
         
@@ -84,7 +84,7 @@ class BacktestEngine:
             truncated = False
             step = 0
             
-            while not (terminated or truncated):
+            while not (step >= num_steps_per_episode):
                 # Get action from agent
                 action = self.agent.act(observation)
                 

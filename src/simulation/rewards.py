@@ -80,8 +80,7 @@ class SimplePnLReward(RewardFunction):
         Returns:
             Reward value
         """
-        # Simple reward based on realized P&L and transaction costs
-        reward = realized_pnl + unrealized_pnl - transaction_cost
+        reward = info["nav_change"]
         return reward
 
 
@@ -121,17 +120,8 @@ class RiskAdjustedReward(RewardFunction):
         Returns:
             Reward value
         """
-        # Basic P&L component
-        pnl_reward = realized_pnl + unrealized_pnl - transaction_cost
-        
-        # Position penalty (penalize large positions)
-        position_reward = -self.position_penalty * abs(position) ** 2
-        
-        # Volatility penalty
-        position_change_reward = -self.risk_aversion * (position_change ** 2)
-        
-        # Combine all components
-        reward = pnl_reward + position_reward + position_change_reward
+
+        reward = info["nav_change"]
         
         return reward
 

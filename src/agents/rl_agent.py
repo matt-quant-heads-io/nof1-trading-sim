@@ -21,6 +21,15 @@ class TensorboardCallback(BaseCallback):
         self.current_episode_length = 0
     
     def _on_step(self) -> bool:
+        """
+        Called after each step of the environment during training.
+        """
+        # Get the action mask from the environment info
+        action_mask = self.locals['infos'][0].get('action_mask', None)
+        
+        # Store it for use in the next action selection
+        self.action_mask = action_mask
+        
         # Update episode stats
         self.current_episode_reward += self.locals["rewards"][0]
         self.current_episode_length += 1
@@ -155,12 +164,13 @@ class RLAgent(BaseAgent):
             self.logger.error(f"Unsupported algorithm: {self.algorithm}")
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def act(self, observation: np.ndarray) -> int:
+    def act(self, observation: np.ndarray, action_mask: np.ndarray = None) -> int:
         """
-        Select an action based on the observation.
+        Select an action based on the observation and action mask.
         
         Args:
             observation: Environment observation
+            action_mask: Binary mask indicating valid actions (1=valid, 0=invalid)
             
         Returns:
             Action to take
@@ -168,7 +178,19 @@ class RLAgent(BaseAgent):
         self.current_observation = observation
         
         # Use the trained model to predict action
-        action, _ = self.model.predict(observation, deterministic=True)
+        action_values = self.model.predict(observation, deterministic=False)[1]
+        
+        # Apply action mask if provided
+        if action_mask is not None:
+            # Set invalid action probabilities to -inf (or a very low value)
+            masked_action_values = action_values.copy()
+            masked_action_values[action_mask == 0] = float('-inf')
+            
+            # Select the action with the highest valid value
+            action = np.argmax(masked_action_values)
+        else:
+            # If no mask provided, use the model's prediction directly
+            action, _ = self.model.predict(observation, deterministic=True)
         
         return int(action)
     

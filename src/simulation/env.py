@@ -30,13 +30,15 @@ class TradingEnvironment(gym.Env):
         
         # System configuration
         self.mode = self.config.system.mode
-        
+        self.execution_price = None
+        self.capital = None
         # Environment configuration
         self.max_steps = self.config.simulation.max_steps_per_episode
         self.warmup_steps = self.config.simulation.warmup_steps
 
         self.initial_capital = self.config.simulation.initial_capital
         self.transaction_fee_pct = self.config.simulation.transaction_fee_pct
+        self.position_size_fixed_dollar = self.config.simulation.position_size_fixed_dollar
         
         # Agent configuration
         self.max_position = self.config.agents.positions.max_position
@@ -48,6 +50,7 @@ class TradingEnvironment(gym.Env):
         # Setup spaces
         obs_space_type = self.config.agents.observation_space.type 
         action_space_type = self.config.agents.action_space.type
+        self._infos = []
         
         if obs_space_type == 'Box':
             obs_low = self.config.agents.observation_space.low
@@ -90,6 +93,14 @@ class TradingEnvironment(gym.Env):
         self.unrealized_pnl = 0.0
         self.last_price = None
         self.transaction_costs = 0.0
+        self._cum_nav_chg = 0.0
+        self.long_trade_wins = 0
+        self.short_trade_wins = 0
+        self.long_trades = 0
+        self.short_trades = 0
+        self.overall_win_pct = 0.0
+        self.short_win_pct = 0.0
+        self.long_win_pct = 0.0
         
         # Episode statistics
         self.episode_rewards = []
@@ -155,7 +166,8 @@ class TradingEnvironment(gym.Env):
         info = {
             "position": self.position,
             "capital": self.capital,
-            "step": self.episode_step
+            "step": self.episode_step,
+            "action_mask": self._get_action_mask()
         }
         
         return observation, info
@@ -199,23 +211,35 @@ class TradingEnvironment(gym.Env):
         terminated = self._is_episode_done()
         # Truncated is used when episode is cut off prematurely (e.g., due to time limits)
         truncated = False
-        
-        # Update info with additional data
-        info.update({
-            "step": self.episode_step,
-            "position": self.position,
-            "capital": self.capital,
-            "realized_pnl": self.realized_pnl,
-            "unrealized_pnl": self.unrealized_pnl,
-            "total_pnl": self.realized_pnl + self.unrealized_pnl,
-            "transaction_costs": self.transaction_costs
-        })
+
+        self._infos.append(info)
         
         if terminated:
             # Add episode summary to info
             info.update(self._get_episode_summary())
-        
+
         return observation, reward, terminated, truncated, info
+    
+    def _get_action_mask(self) -> np.ndarray:
+        """
+        Get a binary mask indicating which actions are valid in the current state.
+        
+        Returns:
+            Binary mask where 1 = valid action, 0 = invalid action
+        """
+        # Initialize mask with all actions valid
+        mask = np.ones(self.action_space.n, dtype=np.int8)
+        
+        # If at max position, can't buy more
+        if self.position >= self.max_position:
+            mask[1] = 0  # Disable buy action
+        
+        # If at min position, can't sell more
+        if self.position <= self.min_position:
+            mask[2] = 0  # Disable sell action
+            
+        
+        return mask
     
     def _process_action(self, action: int) -> Dict[str, Any]:
         """
@@ -227,7 +251,14 @@ class TradingEnvironment(gym.Env):
         Returns:
             Dictionary with action information
         """
-        action = action.item()
+        action = int(action)
+        
+        # Get action mask and validate action
+        action_mask = self._get_action_mask()
+        if action_mask[action] == 0:
+            self.logger.warning(f"Invalid action {action} selected with position {self.position}. Converting to no-op.")
+            action = 0  # Convert to no-op (hold)
+        
         # Get current price
         current_price = self.orderbook.get_mid_price()
         if current_price is None:
@@ -240,99 +271,91 @@ class TradingEnvironment(gym.Env):
         
         # Store the last price
         self.last_price = current_price
-        
-        # Calculate unrealized P&L before action
-        if self.position != 0 and self.last_price is not None:
-            self.unrealized_pnl = self.position * (current_price - self.last_price)
-        
-        # Default info
-        info = {
-            "action": action,
-            "success": True,
-            "price": current_price,
-            "position_before": self.position,
-            "capital_before": self.capital,
-            "realized_pnl_before": self.realized_pnl,
-            "unrealized_pnl_before": self.unrealized_pnl,
-        }
-        
-        # Define position change based on action
-        position_change = 0.0
-        execution_price = current_price
-        
-        if self.action_space.n == 3:  # [hold, buy, sell]
-            if action == 1:  # buy
-                # Buy 1 unit
-                position_change = 1.0
-                # Calculate execution price with slippage
-                execution_price, slippage = self.orderbook.calculate_execution_price('buy', position_change)
+        prior_nav = self.capital
+        self.max_position_size = self.position_size_fixed_dollar / self.last_price
+
+
+        # If entry position (long or short)
+        if action != 0 and self.position == 0:
+            self.entry_size = self.max_position_size
+            # Buy entry
+            if action == 1:
+                self.long_trades += 1.0
+                self.position = 1.0
                 
-            elif action == 2:  # sell
-                # Sell 1 unit
-                position_change = -1.0
-                # Calculate execution price with slippage
-                execution_price, slippage = self.orderbook.calculate_execution_price('sell', abs(position_change))
+                self.execution_price = self.last_price + self.last_price*self.transaction_fee_pct
+                self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
+                self.capital = self.initial_capital + self.realized_pnl + self.unrealized_pnl
+            else: # Sell entry
+                self.short_trades += 1.0
+                self.position = -1.0
+                self.execution_price = self.last_price - self.last_price*self.transaction_fee_pct
+                self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
+                self.capital = self.initial_capital + self.realized_pnl + self.unrealized_pnl
+        # If exit position
+        elif action != 0 and self.position != 0:
+            entry_execution_price = self.execution_price
+            # Buy exit
+            prior_realized_pnl = self.realized_pnl
+            if action == 1:
+                
+                
+                self.execution_price = self.last_price + self.last_price*self.transaction_fee_pct
+                self.realized_pnl += self.position * (self.execution_price - entry_execution_price)*self.entry_size
+                self.capital = self.initial_capital + self.realized_pnl
+                self.unrealized_pnl = 0.0
+                if (self.realized_pnl - prior_realized_pnl) > 0:
+                    self.short_trade_wins += 1.0
+            else: # Sell exit
+                
+                self.execution_price = self.last_price - self.last_price*self.transaction_fee_pct
+                self.realized_pnl += self.position * (self.execution_price - entry_execution_price)*self.entry_size
+                self.capital = self.initial_capital + self.realized_pnl
+                self.unrealized_pnl = 0.0
+                if (self.realized_pnl - prior_realized_pnl) > 0:
+                    self.long_trade_wins += 1.0
+            self.position = 0.0
+                
+        # In existing position, no action (i.e. no update to said position)
+        elif action == 0 and self.position != 0:
+            self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
+        # No existing position, no action
+        elif action == 0 and self.position == 0:
+            self.execution_price = np.nan
+            self.unrealized_pnl = 0.0
+
+        self.total_pnl = self.unrealized_pnl + self.realized_pnl
+
+        self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
+        self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
+        self.long_win_pct = self.long_trade_wins / (self.long_trades + 1e-5)
         
-        # Calculate transaction cost
-        transaction_cost = abs(position_change * execution_price * self.transaction_fee_pct)
+        # Debug logging
+        self.logger.debug(f"Before action {action}: Position={self.position}, Capital={self.capital}, " 
+                         f"Realized PnL={self.realized_pnl}, Unrealized PnL={self.unrealized_pnl}")
         
-        # Update position and capital
-        new_position = self.position + position_change
-        entry_or_exit = "entry" if new_position != 0 else "exit"
+        nav_change = self.capital - prior_nav
+        self._cum_nav_chg += nav_change
         
-        # Check position limits
-        if new_position > self.max_position:
-            position_change = self.max_position - self.position
-            new_position = self.max_position
-            self.logger.debug(f"Position limit reached (max): {self.max_position}")
-        elif new_position < self.min_position:
-            position_change = self.min_position - self.position
-            new_position = self.min_position
-            self.logger.debug(f"Position limit reached (min): {self.min_position}")
-        
-        # If position change was adjusted, recalculate transaction cost
-        if position_change != (action == 1) - (action == 2):
-            transaction_cost = abs(position_change * execution_price * self.transaction_fee_pct)
-        
-        # Update capital and realized P&L
-        capital_change = -position_change * execution_price - transaction_cost
-        
-        # If reducing position, calculate realized P&L
-        if (self.position > 0 and position_change < 0) or (self.position < 0 and position_change > 0):
-            # Closing position, calculate realized P&L
-            realized_pnl_change = position_change * (execution_price - self.last_price)
-            self.realized_pnl += realized_pnl_change
-        
-        # Update state
-        self.position = new_position
-        self.capital += capital_change
-        self.transaction_costs += transaction_cost
-        
-        # Store trade information if a trade was executed
-        if position_change != 0:
-            trade_info = {
-                "step": self.episode_step,
-                "action": "buy" if position_change > 0 else "sell",
-                "position_change": position_change,
-                "execution_price": execution_price,
-                "transaction_cost": transaction_cost,
-                "entry_or_exit": entry_or_exit
-            }
-            self.episode_trades.append(trade_info)
-        
-        # Update episode positions
-        self.episode_positions.append(self.position)
-        
-        # Update info with action results
-        info.update({
-            "position_change": position_change,
-            "position_after": self.position,
-            "execution_price": execution_price,
-            "transaction_cost": transaction_cost,
-            "capital_after": self.capital,
-            "realized_pnl_after": self.realized_pnl,
-            "unrealized_pnl_after": self.unrealized_pnl,
-        })
+        info = {
+            "step": self.episode_step,
+            "action": action,
+            "price": self.last_price,
+            "position":	self.position,
+            "execution_price": self.execution_price,	
+            "realized_pnl": self.realized_pnl,
+            "unrealized_pnl": self.unrealized_pnl,
+            "total_pnl": self.total_pnl,
+            "capital": self.capital,
+            "nav_change": nav_change,
+            "cumul_nav_change": self._cum_nav_chg,
+            "long_win_pct": self.long_win_pct,
+            "short_win_pct": self.short_win_pct,
+            "win_pct": self.overall_win_pct, 
+            "long_trades": self.long_trades,
+            "short_trades": self.short_trades,
+            "action_mask": self._get_action_mask()
+        }
         
         return info
     
