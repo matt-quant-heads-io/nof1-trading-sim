@@ -28,6 +28,8 @@ simulation:
   transaction_fee_pct: 0.0005
   slippage_model: "fixed"
   slippage_value: 0.0001
+  position_size_fixed_dollar: 1000.00
+
 
 agents:
   num_agents: 1
