@@ -201,7 +201,7 @@ class TradingEnvironment(gym.Env):
         
         # Get new observation
         observation = self._get_observation()
-        print(f"observation: {observation}")
+        # print(f"observation: {observation}")
         
         # Calculate reward
         reward = self._calculate_reward(action, info)
@@ -240,6 +240,19 @@ class TradingEnvironment(gym.Env):
             
         
         return mask
+
+    def _process_onehot_action(self, action: np.ndarray) -> Dict[str, Any]:
+        """
+        Process the agent's (one-hot encoded) action.
+
+        Args:
+            action: Agent action
+            
+        Returns:
+            Dictionary with action information
+        """
+        disc_action = np.argmax(action)
+        return self._process_action(disc_action)
     
     def _process_action(self, action: int) -> Dict[str, Any]:
         """
@@ -256,7 +269,7 @@ class TradingEnvironment(gym.Env):
         # Get action mask and validate action
         action_mask = self._get_action_mask()
         if action_mask[action] == 0:
-            self.logger.warning(f"Invalid action {action} selected with position {self.position}. Converting to no-op.")
+            # self.logger.warning(f"Invalid action {action} selected with position {self.position}. Converting to no-op.")
             action = 0  # Convert to no-op (hold)
         
         # Get current price
