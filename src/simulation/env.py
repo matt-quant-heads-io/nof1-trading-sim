@@ -55,7 +55,7 @@ class TradingEnvironment(gym.Env):
         if obs_space_type == 'Box':
             obs_low = self.config.agents.observation_space.low
             obs_high = self.config.agents.observation_space.high
-            obs_shape = self.config.agents.observation_space.shape  # +1 for position
+            obs_shape = (self.config.agents.observation_space.n_feats * self.config.agents.observation_space.n_stack,)
             
             self.observation_space = spaces.Box(
                 low=float(obs_low),
@@ -107,6 +107,7 @@ class TradingEnvironment(gym.Env):
         self.episode_positions = []
         self.episode_trades = []
         self.episode_pnls = []
+        self.stacked_obs = None
         
         # Initialize state
         self.reset()
@@ -140,6 +141,7 @@ class TradingEnvironment(gym.Env):
         self.episode_positions = []
         self.episode_trades = []
         self.episode_pnls = []
+        self.stacked_obs = None
         
         if self.mode == 'historical' and self.data is not None:
             # Start at a random point for each episode, allowing for max_steps
@@ -473,7 +475,13 @@ class TradingEnvironment(gym.Env):
         # Add position to observation
         observation = np.append(orderbook_state, [self.position])
         
-        return observation
+        if self.stacked_obs is None:
+            self.stacked_obs = np.repeat([observation], self.config.agents.observation_space.n_stack, axis=0)
+        else:
+            # WARNING: This assumes we don't call this function outside of one call in `step()`
+            self.stacked_obs = np.append(self.stacked_obs[1:], [observation], axis=0)
+
+        return self.stacked_obs.flatten()
     
     def _get_episode_summary(self) -> Dict[str, Any]:
         """

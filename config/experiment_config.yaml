@@ -38,7 +38,8 @@ agents:
     type: "Box"
     low: -10.0
     high: 10.0
-    shape: [9]  # 8 features + 1 position
+    n_feats: 9  # 8 features + 1 position
+    n_stack: 100
   action_space:
     type: "Discrete"
     n: 3  # 0: hold, 1: buy, 2: sell
