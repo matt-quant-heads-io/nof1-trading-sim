@@ -1,5 +1,5 @@
-from src.backtesting.backtest_engine import BacktestEngine
-from src.backtesting.metrics import (
+from nof1.backtesting.backtest_engine import BacktestEngine
+from nof1.backtesting.metrics import (
     calculate_sharpe_ratio,
     calculate_sortino_ratio,
     calculate_max_drawdown,

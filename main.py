@@ -8,13 +8,13 @@ from typing import Dict, Any
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-from src.utils.config_manager import ConfigManager
-from src.data_ingestion.historical_data_reader import HistoricalDataReader
-from src.data_ingestion.live_data_connector import LiveDataConnector
-from src.simulation.env import TradingEnvironment
-from src.agents.rl_agent import RLAgent
-from src.backtesting.backtest_engine import BacktestEngine
-from src.utils.benchmark import run_benchmark
+from nof1.utils.config_manager import ConfigManager
+from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
+from nof1.data_ingestion.live_data_connector import LiveDataConnector
+from nof1.simulation.env import TradingEnvironment
+from nof1.agents.rl_agent import RLAgent
+from nof1.backtesting.backtest_engine import BacktestEngine
+from nof1.utils.benchmark import run_benchmark
 
 def setup_logging(log_level: str = "INFO") -> None:
     """

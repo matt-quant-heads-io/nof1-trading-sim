@@ -8,9 +8,9 @@ import time
 import json
 from datetime import datetime
 
-from src.agents.base_agent import BaseAgent
-from src.simulation.env import TradingEnvironment
-from src.backtesting.metrics import calculate_metrics
+from nof1.agents.base_agent import BaseAgent
+from nof1.simulation.env import TradingEnvironment
+from nof1.backtesting.metrics import calculate_metrics
 
 class BacktestEngine:
     """

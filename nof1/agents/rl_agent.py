@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Tuple, Optional, Union, Type
 from stable_baselines3 import PPO, A2C, SAC, TD3, DQN
 from stable_baselines3.common.callbacks import BaseCallback
 
-from src.agents.base_agent import BaseAgent
+from nof1.agents.base_agent import BaseAgent
 
 class TensorboardCallback(BaseCallback):
     """
