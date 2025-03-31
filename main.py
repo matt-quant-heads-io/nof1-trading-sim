@@ -50,7 +50,7 @@ def parse_args():
         Parsed arguments
     """
     parser = argparse.ArgumentParser(description="Trading Simulation System for RL Agents")
-    parser.add_argument("--config", type=str, help="Path to configuration file", default="config/default_config.yaml")
+    parser.add_argument("--config", type=str, help="Path to configuration file", default="config/experiment_config_2.yaml")
     parser.add_argument("--mode", type=str, choices=["historical", "paper_trading"], help="System mode")
     parser.add_argument("--data", type=str, help="Path to historical data file")
     parser.add_argument("--train", action="store_true", help="Train the agent")
