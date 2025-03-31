@@ -12,11 +12,11 @@ import matplotlib.pyplot as plt
 import time
 from typing import Dict, Any, List
 
-from src.utils.config_manager import ConfigManager
-from src.data_ingestion.historical_data_reader import HistoricalDataReader
-from src.simulation.env import TradingEnvironment
-from src.agents.base_agent import BaseAgent
-from src.agents.rl_agent import RLAgent
+from nof1.utils.config_manager import ConfigManager
+from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
+from nof1.simulation.env import TradingEnvironment
+from nof1.agents.base_agent import BaseAgent
+from nof1.agents.rl_agent import RLAgent
 
 class PerformanceBenchmark:
     """Class for benchmarking the performance of the trading environment and agents."""

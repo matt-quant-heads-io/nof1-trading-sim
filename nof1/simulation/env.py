@@ -4,8 +4,8 @@ import numpy as np
 import logging
 from typing import Dict, Any, List, Tuple, Optional, Union
 
-from src.simulation.orderbook import OrderBook
-from src.simulation.rewards import get_reward_function, RewardFunction
+from nof1.simulation.orderbook import OrderBook
+from nof1.simulation.rewards import get_reward_function, RewardFunction
 
 class TradingEnvironment(gym.Env):
     """

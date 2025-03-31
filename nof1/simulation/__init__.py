@@ -1,6 +1,6 @@
-from src.simulation.env import TradingEnvironment
-from src.simulation.orderbook import OrderBook
-from src.simulation.rewards import (
+from nof1.simulation.env import TradingEnvironment
+from nof1.simulation.orderbook import OrderBook
+from nof1.simulation.rewards import (
     RewardFunction,
     SimplePnLReward,
     RiskAdjustedReward,

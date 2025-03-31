@@ -175,10 +175,10 @@ def run_benchmark(config_path, num_steps=10000):
     Returns:
         Dictionary with benchmark results
     """
-    from src.utils.config_manager import ConfigManager
-    from src.data_ingestion.historical_data_reader import HistoricalDataReader
-    from src.simulation.env import TradingEnvironment
-    from src.agents.rl_agent import RLAgent
+    from nof1.utils.config_manager import ConfigManager
+    from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
+    from nof1.simulation.env import TradingEnvironment
+    from nof1.agents.rl_agent import RLAgent
     import os
     
     # Create results directory if it doesn't exist
