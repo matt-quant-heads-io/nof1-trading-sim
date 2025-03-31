@@ -80,6 +80,9 @@ class SimplePnLReward(RewardFunction):
         Returns:
             Reward value
         """
+        # import pdb; pdb.set_trace()
+        if "nav_change" not in info:
+            return 0.0
         reward = info["nav_change"]
         return reward
 

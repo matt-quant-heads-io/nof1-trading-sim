@@ -8,3 +8,5 @@ scikit-learn>=1.0.0
 torch>=1.11.0
 shimmy>=0.2.1  # For compatibility layers if needed
 tensorboard
+hyperliquid-python-sdk
+yfinance

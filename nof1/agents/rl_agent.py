@@ -70,13 +70,14 @@ class RLAgent(BaseAgent):
             env: Trading environment
         """
         super(RLAgent, self).__init__(config, env)
-        
+        self.config = config
+        self.config.rl
         # RL configuration
-        self.algorithm = config.get('rl.algorithm', 'PPO')
-        self.policy_type = config.get('rl.policy_type', 'MlpPolicy')
-        self.learning_rate = config.get('rl.learning_rate', 0.0003)
-        self.tensorboard_log = config.get('rl.tensorboard_log', './logs/')
-        self.device = config.get('rl.device', 'auto')
+        self.algorithm = self.config.rl.algorithm
+        self.policy_type = self.config.rl.policy_type 
+        self.learning_rate = self.config.rl.learning_rate 
+        self.tensorboard_log = self.config.rl.tensorboard_log 
+        self.device = self.config.rl.device
         
         # Create model
         self.model = self._create_model()
@@ -94,24 +95,24 @@ class RLAgent(BaseAgent):
         # Common parameters
         algo_params["learning_rate"] = self.learning_rate
         algo_params["tensorboard_log"] = self.tensorboard_log
-        algo_params["verbose"] = self.config.get('rl.verbose', 1)
+        algo_params["verbose"] = self.config.rl.verbose
         algo_params["device"] = self.device
         
         # Algorithm-specific parameters
         if self.algorithm == 'PPO':
-            algo_params["n_steps"] = self.config.get('rl.n_steps', 2048)
-            algo_params["batch_size"] = self.config.get('rl.batch_size', 64)
-            algo_params["n_epochs"] = self.config.get('rl.n_epochs', 10)
-            algo_params["gamma"] = self.config.get('rl.gamma', 0.99)
-            algo_params["gae_lambda"] = self.config.get('rl.gae_lambda', 0.95)
-            algo_params["clip_range"] = self.config.get('rl.clip_range', 0.2)
-            algo_params["normalize_advantage"] = self.config.get('rl.normalize_advantage', True)
-            algo_params["ent_coef"] = self.config.get('rl.ent_coef', 0.01)
-            algo_params["vf_coef"] = self.config.get('rl.vf_coef', 0.5)
-            algo_params["max_grad_norm"] = self.config.get('rl.max_grad_norm', 0.5)
-            algo_params["use_sde"] = self.config.get('rl.use_sde', False)
-            algo_params["sde_sample_freq"] = self.config.get('rl.sde_sample_freq', -1)
-            algo_params["target_kl"] = self.config.get('rl.target_kl', None)
+            algo_params["n_steps"] = self.config.rl.n_steps
+            algo_params["batch_size"] = self.config.rl.batch_size
+            algo_params["n_epochs"] = self.config.rl.n_epochs
+            algo_params["gamma"] = self.config.rl.gamma
+            algo_params["gae_lambda"] = self.config.rl.gae_lambda
+            algo_params["clip_range"] = self.config.rl.clip_range
+            algo_params["normalize_advantage"] = self.config.rl.normalize_advantage
+            algo_params["ent_coef"] = self.config.rl.ent_coef
+            algo_params["vf_coef"] = self.config.rl.vf_coef
+            algo_params["max_grad_norm"] = self.config.rl.max_grad_norm
+            algo_params["use_sde"] = self.config.rl.use_sde
+            algo_params["sde_sample_freq"] = self.config.rl.sde_sample_freq
+            algo_params["target_kl"] = self.config.rl.target_kl
             
             return PPO(self.policy_type, self.env, **algo_params)
             

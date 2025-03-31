@@ -52,8 +52,9 @@ class OrderBook:
             Mid price or None if not available
         """
 
-        if 'bid_price_1' in self.current_state and 'ask_price_1' in self.current_state:
-            return (self.current_state['bid_price_1'] + self.current_state['ask_price_1']) / 2
+
+        if 'hl_bid_px_0' in self.current_state and 'hl_ask_px_0' in self.current_state:
+            return (self.current_state['hl_bid_px_0'] + self.current_state['hl_ask_px_0']) / 2
         return None
     
     def get_bid_price(self, level: int = 1) -> Optional[float]:
@@ -66,7 +67,7 @@ class OrderBook:
         Returns:
             Bid price or None if not available
         """
-        bid_key = f"bid_price_{level}"
+        bid_key = f"hl_bid_px_{level-1}"
         return self.current_state.get(bid_key)
     
     def get_ask_price(self, level: int = 1) -> Optional[float]:
@@ -79,7 +80,7 @@ class OrderBook:
         Returns:
             Ask price or None if not available
         """
-        ask_key = f"ask_price_{level}"
+        ask_key = f"hl_ask_px_{level-1}"
         return self.current_state.get(ask_key)
     
     def get_bid_size(self, level: int = 1) -> Optional[float]:
@@ -92,7 +93,7 @@ class OrderBook:
         Returns:
             Bid size or None if not available
         """
-        bid_key = f"bid_size_{level}"
+        bid_key = f"hl_bid_sz_{level-1}"
         return self.current_state.get(bid_key)
     
     def get_ask_size(self, level: int = 1) -> Optional[float]:
@@ -105,7 +106,7 @@ class OrderBook:
         Returns:
             Ask size or None if not available
         """
-        ask_key = f"ask_size_{level}"
+        ask_key = f"hl_ask_sz_{level-1}"
         return self.current_state.get(ask_key)
     
     def get_spread(self) -> Optional[float]:

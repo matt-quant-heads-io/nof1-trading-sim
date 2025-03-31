@@ -50,6 +50,7 @@ class HistoricalDataReader:
             
             # Ensure all required feature columns exist
             missing_cols = [col for col in self.feature_columns if col not in df.columns]
+
             if missing_cols:
                 self.logger.error(f"Missing required columns in data: {missing_cols}")
                 raise ValueError(f"Missing required columns in data: {missing_cols}")
@@ -79,9 +80,11 @@ class HistoricalDataReader:
         features_df = features_df.fillna(method='ffill').fillna(method='bfill')
         
         # Normalize features if required
+        
         if self.normalize_features:
             self.logger.info("Normalizing features")
             for col in self.feature_columns:
+                # import pdb; pdb.set_trace()
                 mean = features_df[col].mean()
                 std = features_df[col].std()
                 features_df[col] = (features_df[col] - mean) / (std if std > 0 else 1)
