@@ -1,0 +1,125 @@
+system:
+  mode: "historical"
+  random_seed: 123
+  num_parallel_envs: 4
+  log_level: "INFO"
+
+data:
+  historical:
+    data_path: "data/BTC_merged_data_from_2025-02-28 _to_2025-03-05.csv"
+    train_test_split: 0.99
+    feature_columns:
+      - hl_bid_px_0
+      - hl_bid_sz_0
+      - hl_bid_n_0
+      - hl_bid_px_1
+      - hl_bid_sz_1
+      - hl_bid_n_1
+      - hl_bid_px_2
+      - hl_bid_sz_2
+      - hl_bid_n_2
+      - hl_bid_px_3
+      - hl_bid_sz_3
+      - hl_bid_n_3
+      - hl_bid_px_4
+      - hl_bid_sz_4
+      - hl_bid_n_4
+      - hl_ask_px_0
+      - hl_ask_sz_0
+      - hl_ask_n_0
+      - hl_ask_px_1
+      - hl_ask_sz_1
+      - hl_ask_n_1
+      - hl_ask_px_2
+      - hl_ask_sz_2
+      - hl_ask_n_2
+      - hl_ask_px_3
+      - hl_ask_sz_3
+      - hl_ask_n_3
+      - hl_ask_px_4
+      - hl_ask_sz_4
+      - hl_ask_n_4
+      - poly_SPY_v
+      - poly_SPY_vw
+      - poly_SPY_o
+      - poly_SPY_c
+      - poly_SPY_h
+      - poly_SPY_l
+      - poly_SPY_n
+      - poly_QQQ_v
+      - poly_QQQ_vw
+      - poly_QQQ_o
+      - poly_QQQ_c
+      - poly_QQQ_h
+      - poly_QQQ_l
+      - poly_QQQ_n
+      - poly_VXX_v
+      - poly_VXX_vw
+      - poly_VXX_o
+      - poly_VXX_c
+      - poly_VXX_h
+      - poly_VXX_l
+      - poly_VXX_n
+    timestamp_column: "timestamp"
+    normalize_features: true
+
+simulation:
+  max_steps_per_episode: 500
+  warmup_steps: 10
+  tick_size: 0.01
+  initial_capital: 10000.0
+  transaction_fee_pct: 0.0005
+  slippage_model: "fixed"
+  slippage_value: 0.0001
+  position_size_fixed_dollar: 1000.00
+
+
+agents:
+  num_agents: 1
+  shared_policy: false
+  observation_space:
+    type: "Box"
+    low: -10.0
+    high: inf
+    n_feats: 52  # 8 features + 1 position
+    n_stack: 3 
+  action_space:
+    type: "Discrete"
+    n: 3  # 0: hold 1: buy 2: sell
+  positions:
+    max_position: 1
+    min_position: -1
+
+
+rl:
+  algorithm: "PPO"
+  policy_type: "MlpPolicy"
+  learning_rate: 0.0003
+  n_steps: 256
+  batch_size: 256
+  n_epochs: 1000
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  normalize_advantage: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  use_sde: false
+  sde_sample_freq: -1
+  target_kl: null
+  tensorboard_log: "./logs/"
+  create_eval_env: true
+  verbose: 1
+  device: "auto"
+  reward_type: simple_pnl
+
+backtesting:
+  metrics:
+    - "sharpe_ratio"
+    - "sortino_ratio"
+    - "max_drawdown"
+    - "total_pnl"
+    - "win_rate"
+  results_dir: "./results"
+  plot_results: true
