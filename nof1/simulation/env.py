@@ -3,6 +3,10 @@ from gymnasium import spaces
 import numpy as np
 import logging
 from typing import Dict, Any, List, Tuple, Optional, Union
+import matplotlib.pyplot as plt
+import os
+import pandas as pd
+import uuid
 
 from nof1.simulation.orderbook import OrderBook
 from nof1.simulation.rewards import get_reward_function, RewardFunction
@@ -13,7 +17,7 @@ class TradingEnvironment(gym.Env):
     """
     metadata = {'render_modes': ['human']}
     
-    def __init__(self, config: Dict[str, Any], data: Optional[np.ndarray] = None):
+    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None):
         # Initialize the Gymnasium environment
         super(TradingEnvironment, self).__init__()
         """
@@ -35,6 +39,7 @@ class TradingEnvironment(gym.Env):
         # Environment configuration
         self.max_steps = self.config.simulation.max_steps_per_episode
         self.warmup_steps = self.config.simulation.warmup_steps
+        self.live_plot = self.config.simulation.live_plot
 
         self.initial_capital = self.config.simulation.initial_capital
         self.transaction_fee_pct = self.config.simulation.transaction_fee_pct
@@ -72,42 +77,15 @@ class TradingEnvironment(gym.Env):
         else:
             raise ValueError(f"Unsupported action space type: {action_space_type}")
         
-        # Initialize orderbook
-        self.orderbook = OrderBook(config)
-        
-        # Initialize reward function
-        self.reward_function = get_reward_function(config)
-        
-        # Data for historical mode
-        self.data = data
-        self.current_step = 0
-        self.episode_step = 0
-        
-        # Add this line to store the current state
-        self.current_state = {}
-        
-        # Trading state
-        self.position = 0.0
-        self.capital = self.initial_capital
-        self.realized_pnl = 0.0
-        self.unrealized_pnl = 0.0
-        self.last_price = None
-        self.transaction_costs = 0.0
-        self._cum_nav_chg = 0.0
-        self.long_trade_wins = 0
-        self.short_trade_wins = 0
-        self.long_trades = 0
-        self.short_trades = 0
-        self.overall_win_pct = 0.0
-        self.short_win_pct = 0.0
-        self.long_win_pct = 0.0
-        
-        # Episode statistics
+        self.states = states
+        self.prices = prices 
+        self.atrs = atrs
+        self.timestamps = timestamps
+        self.capital = 10000
+        self.returns = [self.capital]
         self.episode_rewards = []
-        self.episode_positions = []
-        self.episode_trades = []
-        self.episode_pnls = []
-        self.stacked_obs = None
+        self.pt_atr_mult = self.config.simulation.pt_atr_mult
+        self.sl_atr_mult = self.config.simulation.sl_atr_mult
         
         # Initialize state
         self.reset()
@@ -127,52 +105,38 @@ class TradingEnvironment(gym.Env):
         if seed is not None:
             super().reset(seed=seed)
             np.random.seed(seed)
-        
-        # Reset trading state
-        self.position = 0.0
-        self.capital = self.initial_capital
-        self.realized_pnl = 0.0
-        self.unrealized_pnl = 0.0
-        self.transaction_costs = 0.0
-        
-        # Reset episode counters
-        self.episode_step = 0
+
+        self._step = 1
+        self.position = 0
+        self.current_state = np.append( self.states[self._step-1], [self.position])
+        self.current_price = self.prices[self._step]
+        self.atr = self.atrs[self._step-1]
+        self.entry_price = None
+        self.profit_target = None
+        self.stop_loss = None
+        self.trade_blotter = []
+        self.capital = 10000
+        self.returns = [self.capital]
         self.episode_rewards = []
-        self.episode_positions = []
-        self.episode_trades = []
-        self.episode_pnls = []
-        self.stacked_obs = None
-        
-        if self.mode == 'historical' and self.data is not None:
-            # Start at a random point for each episode, allowing for max_steps
-            max_start = max(0, len(self.data) - self.max_steps - 1)
-            self.current_step = np.random.randint(0, max_start) if max_start > 0 else 0
-            
-            # Apply warmup steps to initialize orderbook state
-            for i in range(self.warmup_steps):
-                if self.current_step + i < len(self.data):
-                    self._update_orderbook_historical(self.current_step + i)
-            
-            # Set current step to after warmup
-            self.current_step += self.warmup_steps
-            
-            # Update orderbook with the current step data
-            if self.current_step < len(self.data):
-                self._update_orderbook_historical(self.current_step)
-        
-        
-        # Get initial observation
-        observation = self._get_observation()
+        self.short_trade_wins = 0
+        self.long_trade_wins = 0
+        self.short_trades = 0
+        self.long_trades = 0
+        self._infos = []  # Reset the info history
+        self.unrealized_pnl = 0.0
+        self.realized_pnl = 0.0
         
         # Initial info
         info = {
             "position": self.position,
             "capital": self.capital,
-            "step": self.episode_step,
-            "action_mask": self._get_action_mask()
+            "step": self._step,
+            "action_mask": self._get_action_mask(),
+            "price": self.current_price
         }
+        self._infos.append(info)  # Store initial info
         
-        return observation, info
+        return self.current_state, info
     
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
@@ -183,44 +147,86 @@ class TradingEnvironment(gym.Env):
             
         Returns:
             Tuple of (observation, reward, terminated, truncated, info)
-        """
-        if self.mode == 'historical' and self.data is not None:
-            # Check if we're at the end of the data
-            if self.current_step >= len(self.data) - 1:
-                return self._get_observation(), 0.0, True, False, {"reason": "end_of_data"}
-        
+        """        
         # Process the action
         info = self._process_action(action)
-        
-        # Update environment state
-        if self.mode == 'historical' and self.data is not None:
-            self.current_step += 1
-            if self.current_step < len(self.data):
-                self._update_orderbook_historical(self.current_step)
-        
-        # Update episode step counter
-        self.episode_step += 1
+
+        self._step += 1
         
         # Get new observation
-        observation = self._get_observation()
-        # print(f"observation: {observation}")
+        self.current_state = np.append(self.states[self._step-1], [self.position])
+        self.current_price = self.prices[self._step]
+        self.atr = self.atrs[self._step-1]
         
-        # Calculate reward
+        
+        # NOTE: Calculate reward
         reward = self._calculate_reward(action, info)
         self.episode_rewards.append(reward)
         
-        # Check if episode is done
+        # Store info for plotting
+        self._infos.append(info)
+        
+        # NOTE: Check if episode is done
         terminated = self._is_episode_done()
         # Truncated is used when episode is cut off prematurely (e.g., due to time limits)
         truncated = False
 
-        self._infos.append(info)
+        if self.live_plot:
+            self._create_returns_plot()
         
+        
+        # NOTE: 
         if terminated:
-            # Add episode summary to info
             info.update(self._get_episode_summary())
+            
 
-        return observation, reward, terminated, truncated, info
+        return self.current_state, reward, terminated, truncated, info
+    
+    def _create_returns_plot(self):
+        """
+        Create a line chart that plots price and capital over time.
+        Save the plot as 'live_returns.png'.
+        """
+        if not self._infos:
+            self.logger.warning("No info data available for plotting")
+            return
+            
+        # Extract data from info history
+        steps = [info.get('step', i) for i, info in enumerate(self._infos)]
+        prices = [info.get('price', 0) for info in self._infos]
+        capitals = [info.get('capital', 0) for info in self._infos]
+        
+        # Create figure with two y-axes
+        fig, ax1 = plt.figure(figsize=(12, 6)), plt.gca()
+        
+        # Plot price on the first y-axis
+        color = 'tab:blue'
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('Price', color=color)
+        ax1.plot(steps, prices, color=color, label='Price')
+        ax1.tick_params(axis='y', labelcolor=color)
+        
+        # Create a second y-axis for capital
+        ax2 = ax1.twinx()
+        color = 'tab:red'
+        ax2.set_ylabel('Capital', color=color)
+        ax2.plot(steps, capitals, color=color, label='Capital')
+        ax2.tick_params(axis='y', labelcolor=color)
+        
+        # Add title and legend
+        plt.title('Price and Capital over Time')
+        
+        # Add legends for both axes
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        
+        # Adjust layout and save
+        fig.tight_layout()
+        plt.savefig('live_returns.png')
+        plt.close(fig)
+        
+        self.logger.info("Saved returns plot to live_returns.png")
     
     def _get_action_mask(self) -> np.ndarray:
         """
@@ -233,12 +239,15 @@ class TradingEnvironment(gym.Env):
         mask = np.ones(self.action_space.n, dtype=np.int8)
         
         # If at max position, can't buy more
-        if self.position >= self.max_position:
+        if self.position > 0:
             mask[1] = 0  # Disable buy action
         
         # If at min position, can't sell more
-        if self.position <= self.min_position:
+        if self.position < 0:
             mask[2] = 0  # Disable sell action
+
+        if self.position == 0:
+            mask[3] = 0
             
         
         return mask
@@ -271,105 +280,146 @@ class TradingEnvironment(gym.Env):
         # Get action mask and validate action
         action_mask = self._get_action_mask()
         if action_mask[action] == 0:
-            # self.logger.warning(f"Invalid action {action} selected with position {self.position}. Converting to no-op.")
             action = 0  # Convert to no-op (hold)
-        
-        # Get current price
-        current_price = self.orderbook.get_mid_price()
-        if current_price is None:
-            self.logger.warning("No mid price available, using last price")
-            current_price = self.last_price
-        
-        if current_price is None:
-            self.logger.error("No price information available")
-            return {"success": False, "reason": "no_price"}
-        
-        # Store the last price
-        self.last_price = current_price
-        prior_nav = self.capital
-        self.max_position_size = self.position_size_fixed_dollar / self.last_price
 
+
+        
+
+        # import pdb; pdb.set_trace()
+        action_label = "NoOp"
+        info = {}
+        reset_internals = False
+        trade_pnl = 0.0
 
         # If entry position (long or short)
         if action != 0 and self.position == 0:
-            self.entry_size = self.max_position_size
             # Buy entry
-            if action == 1:
-                self.long_trades += 1.0
-                self.position = 1.0
-                
-                self.execution_price = self.last_price + self.last_price*self.transaction_fee_pct
-                self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
-                self.capital = self.initial_capital + self.realized_pnl + self.unrealized_pnl
-            else: # Sell entry
-                self.short_trades += 1.0
-                self.position = -1.0
-                self.execution_price = self.last_price - self.last_price*self.transaction_fee_pct
-                self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
-                self.capital = self.initial_capital + self.realized_pnl + self.unrealized_pnl
-        # If exit position
-        elif action != 0 and self.position != 0:
-            entry_execution_price = self.execution_price
-            # Buy exit
-            prior_realized_pnl = self.realized_pnl
-            if action == 1:
-                
-                
-                self.execution_price = self.last_price + self.last_price*self.transaction_fee_pct
-                self.realized_pnl += self.position * (self.execution_price - entry_execution_price)*self.entry_size
-                self.capital = self.initial_capital + self.realized_pnl
-                self.unrealized_pnl = 0.0
-                if (self.realized_pnl - prior_realized_pnl) > 0:
-                    self.short_trade_wins += 1.0
-            else: # Sell exit
-                
-                self.execution_price = self.last_price - self.last_price*self.transaction_fee_pct
-                self.realized_pnl += self.position * (self.execution_price - entry_execution_price)*self.entry_size
-                self.capital = self.initial_capital + self.realized_pnl
-                self.unrealized_pnl = 0.0
-                if (self.realized_pnl - prior_realized_pnl) > 0:
-                    self.long_trade_wins += 1.0
-            self.position = 0.0
-                
-        # In existing position, no action (i.e. no update to said position)
-        elif action == 0 and self.position != 0:
-            self.unrealized_pnl = self.position * (self.last_price - self.execution_price)*self.entry_size
-        # No existing position, no action
-        elif action == 0 and self.position == 0:
-            self.execution_price = np.nan
-            self.unrealized_pnl = 0.0
+            self.entry_price = self.current_price
+            self.entry_step = self._step
+            self.entry_time = self.timestamps[self._step]
 
-        self.total_pnl = self.unrealized_pnl + self.realized_pnl
+            if action == 1:
+                action_label = "LongEntry"
+                self.long_trades += 1
+                self.position = int(1000.0 / (self.sl_atr_mult*self.atr))
+                self.profit_target = self.entry_price + self.pt_atr_mult*self.atr
+                self.stop_loss = self.entry_price - self.sl_atr_mult*self.atr
+                self.unrealized_pnl = 0.0
+                # self.realized_pnl = 0.0
+                self.long_trades += 1
+                
+                
+                # self.entry_execution_price = self.last_price + self.last_price*self.transaction_fee_pct
+                # self.unrealized_pnl = (self.last_price - self.entry_execution_price)*self.entry_size
+                # self.capital += self.unrealized_pnl
+            else: # Sell entry
+                action_label = "ShortEntry"
+                self.short_trades += 1
+                self.position = -int((1000.0 / (self.sl_atr_mult*self.atr)))
+                self.profit_target = self.entry_price - self.pt_atr_mult*self.atr
+                self.stop_loss = self.entry_price + self.sl_atr_mult*self.atr
+                trade_pnl = 0.0
+                self.short_trades += 1
+                self.unrealized_pnl = 0.0
+
+        # In existing position, no action (i.e. no update to said position)
+        
+        elif self.position > 0:
+            # NOTE check if PT or SL and if yes --> check if PT or SL is met and close the position and calc PnL accordingly ELSE just update the unrealized pnl
+            if self.current_price >= self.profit_target:
+                self.long_trade_wins += 1
+                action_label = "LongExit"
+                reset_internals = True
+                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            elif  self.current_price <= self.stop_loss:
+                action_label = "LongExit"
+                reset_internals = True
+                trade_pnl = (self.stop_loss - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            # NOTE: Check if agent closed the position
+            elif action == 3:
+                action_label = "LongExit"
+                reset_internals = True
+                trade_pnl = (self.current_price - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            else: 
+                self.unrealized_pnl = (self.current_price - self.entry_price)*self.position
+
+        
+        elif self.position < 0:
+            # NOTE check if PT or SL and if yes --> check if PT or SL is met and close the position and calc PnL accordingly ELSE just update the unrealized pnl
+            if self.current_price <= self.profit_target:
+                self.short_trade_wins += 1
+                action_label = "ShortExit"
+                reset_internals = True
+                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                # import pdb; pdb.set_trace()
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "pnl": trade_pnl, "exit_time": self.timestamps[self._step], "quantity": abs(self.position)})
+            elif  self.current_price >= self.stop_loss:
+                action_label = "ShortExit"
+                reset_internals = True
+                trade_pnl = (self.stop_loss - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                # import pdb; pdb.set_trace()
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            # NOTE: Check if agent closed the position
+            elif action == 3:
+                action_label = "ShortExit"
+                reset_internals = True
+                trade_pnl = (self.current_price - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            else:
+                self.unrealized_pnl = (self.current_price - self.entry_price)*self.position
+
+        self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
+        self.returns.append(self.capital)
+        step_return = self.returns[-1] - self.returns[-2]
+        info['step_return'] = step_return
+
+        if reset_internals:
+            self.profit_target = None
+            self.stop_loss = None
+            self.entry_price = None
+            self.entry_step = None
+            self.position = 0
+
 
         self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
         self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
         self.long_win_pct = self.long_trade_wins / (self.long_trades + 1e-5)
         
         # Debug logging
-        self.logger.debug(f"Before action {action}: Position={self.position}, Capital={self.capital}, " 
-                         f"Realized PnL={self.realized_pnl}, Unrealized PnL={self.unrealized_pnl}")
+        self.logger.debug(f"Before action {action}: Position={self.position}, Capital={self.capital}")
         
-        nav_change = self.capital - prior_nav
-        self._cum_nav_chg += nav_change
+        
         
         info = {
-            "step": self.episode_step,
+            "step": self._step,
             "action": action,
-            "price": self.last_price,
+            "price": self.current_price,
             "position":	self.position,
-            "execution_price": self.execution_price,	
-            "realized_pnl": self.realized_pnl,
-            "unrealized_pnl": self.unrealized_pnl,
-            "total_pnl": self.total_pnl,
             "capital": self.capital,
-            "nav_change": nav_change,
-            "cumul_nav_change": self._cum_nav_chg,
+            "nav_change": step_return,
+            "step_return": step_return,
             "long_win_pct": self.long_win_pct,
             "short_win_pct": self.short_win_pct,
             "win_pct": self.overall_win_pct, 
             "long_trades": self.long_trades,
             "short_trades": self.short_trades,
-            "action_mask": self._get_action_mask()
+            "action_mask": self._get_action_mask(),
+            "action_label": action_label
         }
         
         return info
@@ -385,25 +435,7 @@ class TradingEnvironment(gym.Env):
         Returns:
             Reward value
         """
-        reward = self.reward_function.calculate_reward(
-            action=action,
-            position=self.position,
-            position_change=info.get('position_change', 0.0),
-            execution_price=info.get('execution_price', self.last_price),
-            current_price=info.get('price', self.last_price),
-            unrealized_pnl=self.unrealized_pnl,
-            realized_pnl=info.get('realized_pnl_after', 0.0) - info.get('realized_pnl_before', 0.0),
-            transaction_cost=info.get('transaction_cost', 0.0),
-            info=info
-        )
-        
-        self.episode_pnls.append({
-            "step": self.episode_step,
-            "realized_pnl": self.realized_pnl,
-            "unrealized_pnl": self.unrealized_pnl,
-            "total_pnl": self.realized_pnl + self.unrealized_pnl,
-            "reward": reward
-        })
+        reward = info.get('step_return', 0.0)
         
         return reward
     
@@ -415,73 +447,106 @@ class TradingEnvironment(gym.Env):
             True if done, False otherwise
         """
         # Episode is done if we've reached max steps
-        if self.episode_step >= self.max_steps:
+        if self._step + 1 >= self.max_steps:
+            if self.position > 0:
+                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                if trade_pnl > 0:
+                    self.long_trade_wins += 1
+            
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            elif self.position < 0:
+                trade_pnl = (self.current_price - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                if trade_pnl > 0:
+                    self.short_trade_wins += 1
+            
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            
+            self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
+            self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
+            self.long_win_pct = self.long_trade_wins / (self.long_trades + 1e-5)
+
+            self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
+            self.returns.append(self.capital)
+            
+            episode_hash = uuid.uuid4().hex
+            df = pd.DataFrame.from_records(self.trade_blotter)
+            df["episode_id"] = [episode_hash]*len(df)
+            df.to_csv("./results/trade_blotter.csv", mode='a', header=not os.path.exists("./results/trade_blotter.csv"), index=False)
+
             return True
         
         # Episode is done if we've reached the end of the data in historical mode
-        if self.mode == 'historical' and self.data is not None:
-            if self.current_step >= len(self.data) - 1:
+        if self.mode == 'historical' and self.states is not None:
+            if self._step >= len(self.states) - 1:
+                if self.position > 0:
+                    trade_pnl = (self.profit_target - self.entry_price)*self.position
+                    self.realized_pnl += trade_pnl
+                    if trade_pnl > 0:
+                        self.long_trade_wins += 1
+                
+                    self.unrealized_pnl = 0.0
+                    self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+                elif self.position < 0:
+                    trade_pnl = (self.current_price - self.entry_price)*self.position
+                    self.realized_pnl += trade_pnl
+                    if trade_pnl > 0:
+                        self.short_trade_wins += 1
+                
+                    self.unrealized_pnl = 0.0
+                    self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+                
+                self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
+                self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
+                self.long_win_pct = self.long_trade_wins / (self.long_trades + 1e-5)
+
+                self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
+                self.returns.append(self.capital)
+                
+                episode_hash = uuid.uuid4().hex
+                df = pd.DataFrame.from_records(self.trade_blotter)
+                df["episode_id"] = [episode_hash]*len(df)
+                df.to_csv("./results/trade_blotter.csv", mode='a', header=not os.path.exists("./results/trade_blotter.csv"), index=False)
+                
                 return True
         
         # Episode is done if capital is depleted
         if self.capital <= 0:
+            if self.position > 0:
+                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                if trade_pnl > 0:
+                    self.long_trade_wins += 1
+            
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            elif self.position < 0:
+                trade_pnl = (self.current_price - self.entry_price)*self.position
+                self.realized_pnl += trade_pnl
+                if trade_pnl > 0:
+                    self.short_trade_wins += 1
+            
+                self.unrealized_pnl = 0.0
+                self.trade_blotter.append({"entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "quantity": abs(self.position)})
+            
+            self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
+            self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
+            self.long_win_pct = self.long_trade_wins / (self.long_trades + 1e-5)
+
+            self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
+            self.returns.append(self.capital)
+            
+            episode_hash = uuid.uuid4().hex
+            df = pd.DataFrame.from_records(self.trade_blotter)
+            df["episode_id"] = [episode_hash]*len(df)
+            df.to_csv("./results/trade_blotter.csv", mode='a', header=not os.path.exists("./results/trade_blotter.csv"), index=False)
+            
             return True
         
         return False
-    
-    def _update_orderbook_historical(self, step_idx: int) -> None:
-        """
-        Update the orderbook with historical data for the given step.
-        
-        Args:
-            step_idx: Index of the current step in the data
-        """
-        if step_idx < 0 or step_idx >= len(self.data):
-            self.logger.error(f"Step index {step_idx} out of bounds for data length {len(self.data)}")
-            return
-        
-        # Convert row of data to dictionary
-        row_data = self.data[step_idx]
-        orderbook_data = {}
-        
-        # Debug logging
-        self.logger.debug(f"Data row at step {step_idx}: {row_data}")
-        self.logger.debug(f"Feature columns: {self.feature_columns}")
-        
-        for i, col in enumerate(self.feature_columns):
-            if i < len(row_data):
-                orderbook_data[col] = row_data[i]
-        
-        # Debug logging
-        self.logger.debug(f"Orderbook data: {orderbook_data}")
-        # print(f"Orderbook data: {orderbook_data}")
-        
-        # Store the current state
-        self.current_state = orderbook_data
-        
-        # Update orderbook with the data
-        self.orderbook.update(orderbook_data)
-    
-    def _get_observation(self) -> np.ndarray:
-        """
-        Get the current observation.
-        
-        Returns:
-            Observation as numpy array
-        """
-        # Get orderbook state
-        orderbook_state = self.orderbook.get_state_array()
-        
-        # Add position to observation
-        observation = np.append(orderbook_state, [self.position])
-        
-        if self.stacked_obs is None:
-            self.stacked_obs = np.repeat([observation], self.config.agents.observation_space.n_stack, axis=0)
-        else:
-            # WARNING: This assumes we don't call this function outside of one call in `step()`
-            self.stacked_obs = np.append(self.stacked_obs[1:], [observation], axis=0)
-
-        return self.stacked_obs.flatten()
     
     def _get_episode_summary(self) -> Dict[str, Any]:
         """
@@ -491,16 +556,12 @@ class TradingEnvironment(gym.Env):
             Dictionary with episode summary
         """
         return {
-            "episode_length": self.episode_step,
+            "episode_length": self._step,
             "final_position": self.position,
             "final_capital": self.capital,
-            "total_pnl": self.realized_pnl + self.unrealized_pnl,
-            "realized_pnl": self.realized_pnl,
-            "unrealized_pnl": self.unrealized_pnl,
-            "num_trades": len(self.episode_trades),
+            "num_trades": len(self.trade_blotter),
             "mean_reward": np.mean(self.episode_rewards),
-            "total_reward": np.sum(self.episode_rewards),
-            "transaction_costs": self.transaction_costs
+            "total_reward": np.sum(self.episode_rewards)
         }
     
     def render(self):

@@ -223,6 +223,7 @@ class RLAgent(BaseAgent):
             "episode_rewards": [float(r) for r in callback.episode_rewards],
             "episode_returns": [float(r) for r in callback.episode_returns],
             "mean_episode_length": np.mean(callback.episode_lengths).item() if callback.episode_lengths else 0,
+            "trade_blotter": self.env.trade_blotter
         }
     
     def save(self, path: str) -> None:

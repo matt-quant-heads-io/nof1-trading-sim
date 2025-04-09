@@ -22,6 +22,8 @@ class HistoricalDataReader:
         self.timestamp_column = self.config.data.historical.timestamp_column 
         self.normalize_features = self.config.data.historical.normalize_features 
         self.train_test_split = self.config.data.historical.train_test_split 
+        self.price_column = self.config.data.historical.price_column
+        self.atr_column = self.config.data.historical.atr_column
         
         self.data = None
         self.train_data = None
@@ -92,6 +94,9 @@ class HistoricalDataReader:
         
         # Convert to numpy array
         features = features_df.to_numpy()
+        prices = self.data[self.price_column]
+        atrs = self.data[self.atr_column]
+        timestamps = self.data[self.timestamp_column]
         
         # Split into train and test sets
         split_idx = int(len(features) * self.train_test_split)
@@ -100,7 +105,7 @@ class HistoricalDataReader:
         
         self.logger.info(f"Preprocessed data: {len(self.train_data)} training samples, {len(self.test_data)} testing samples")
         
-        return features, self.feature_stats
+        return features, prices, atrs, timestamps
     
     def get_train_data(self) -> np.ndarray:
         """

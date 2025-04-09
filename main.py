@@ -7,6 +7,7 @@ import gymnasium as gym
 from typing import Dict, Any
 import matplotlib.pyplot as plt
 from datetime import datetime
+import seaborn as sns
 
 from nof1.utils.config_manager import ConfigManager
 from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
@@ -159,10 +160,10 @@ def main():
     if mode == "historical":
         # Load and preprocess data
         data_reader = HistoricalDataReader(config_manager)
-        data, _ = data_reader.preprocess_data()
+        states, prices, atrs, timestamps = data_reader.preprocess_data()
         
         # Create environment
-        env = TradingEnvironment(config_manager.config, data)
+        env = TradingEnvironment(config_manager.config, states = states, prices=prices, atrs=atrs, timestamps=timestamps)
         
         # Create agent
         agent = RLAgent(config_manager.config, env)
