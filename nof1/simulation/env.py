@@ -108,7 +108,7 @@ class TradingEnvironment(gym.Env):
 
         self._step = 1
         self.position = 0
-        self.current_state = np.append( self.states[self._step-1], [self.position])
+        self.current_state = np.append(self.states[self._step-1], [self.position]).astype(np.float32)
         self.current_price = self.prices[self._step]
         self.atr = self.atrs[self._step-1]
         self.entry_price = None
@@ -154,7 +154,7 @@ class TradingEnvironment(gym.Env):
         self._step += 1
         
         # Get new observation
-        self.current_state = np.append(self.states[self._step-1], [self.position])
+        self.current_state = np.append(self.states[self._step-1], [self.position]).astype(np.float32)
         self.current_price = self.prices[self._step]
         self.atr = self.atrs[self._step-1]
         

@@ -6,6 +6,7 @@ pyyaml>=6.0
 matplotlib>=3.5.0
 scikit-learn>=1.0.0
 torch>=1.11.0
+seaborn
 shimmy>=0.2.1  # For compatibility layers if needed
 tensorboard
 hyperliquid-python-sdk
