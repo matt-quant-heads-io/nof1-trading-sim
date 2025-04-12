@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 import matplotlib.pyplot as plt
 import os
 import pandas as pd
+import torch
 import uuid
 from datetime import datetime
 
@@ -708,3 +709,55 @@ class TradingEnvironment(gym.Env):
             return value
         except (KeyError, TypeError):
             return default_value
+
+    def rollout(self, policy, batch_size=None, n_steps=100):
+        """
+        Perform a rollout using the given policy.
+        
+        Args:
+            policy: Policy network that maps state to actions
+            batch_size: Batch size for vectorized execution
+            n_steps: Number of steps in the rollout
+            
+        Returns:
+            total_rewards: Total rewards accumulated during rollout
+            all_states: List of states visited
+            all_actions: List of actions taken
+            all_rewards: List of rewards received
+        """
+        # Reset environment - this will initialize different environments for each batch element
+        state = self.reset(batch_size)
+        
+        # If policy has a reset method (e.g., for RNNs), reset it with the correct batch size
+        if hasattr(policy, 'reset'):
+            if batch_size:
+                policy.reset(batch_size[0] if isinstance(batch_size, list) else batch_size)
+            else:
+                policy.reset()
+        
+        # Initialize lists to store trajectory
+        all_states = [state]
+        all_actions = []
+        all_rewards = []
+        
+        # Accumulate total reward
+        total_rewards = torch.zeros(batch_size if batch_size else (), device=self.device)
+        
+        # Perform rollout
+        for _ in range(n_steps):
+            # Get action from policy
+            action = policy(state)
+            all_actions.append(action)
+            
+            # Take step in environment
+            next_state, reward, done = self.step(state, action)
+            all_rewards.append(reward)
+            
+            # Accumulate rewards
+            total_rewards += reward
+            
+            # Update state
+            state = next_state
+            all_states.append(state)
+        
+        return total_rewards, all_states, all_actions, all_rewards
