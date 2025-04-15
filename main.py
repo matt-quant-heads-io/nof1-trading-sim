@@ -65,6 +65,7 @@ def parse_args():
     
     return parser.parse_args()
 
+
 def plot_training_results(results, save_path):
     """
     Plot and save training results.
@@ -90,17 +91,6 @@ def plot_training_results(results, save_path):
         plt.savefig(f"{save_path}/rewards_{timestamp}.png")
         plt.close()
     
-    # Plot returns
-    if 'episode_returns' in results:
-        plt.figure(figsize=(10, 6))
-        plt.plot(results['episode_returns'])
-        plt.title('Episode Returns')
-        plt.xlabel('Episode')
-        plt.ylabel('Return')
-        plt.grid(True)
-        plt.savefig(f"{save_path}/returns_{timestamp}.png")
-        plt.close()
-    
     # Plot losses if available
     if 'losses' in results:
         plt.figure(figsize=(10, 6))
@@ -114,15 +104,17 @@ def plot_training_results(results, save_path):
     
     # Plot any other metrics that might be in the results
     for key, values in results.items():
-        if key not in ['episode_rewards', 'episode_returns', 'losses', 'algorithm'] and isinstance(values, list):
-            plt.figure(figsize=(10, 6))
-            plt.plot(values)
-            plt.title(f'{key.replace("_", " ").title()}')
-            plt.xlabel('Step')
-            plt.ylabel('Value')
-            plt.grid(True)
-            plt.savefig(f"{save_path}/{key}_{timestamp}.png")
-            plt.close()
+        if key not in ['episode_rewards', 'losses', 'algorithm'] and isinstance(values, list):
+            # Check if the values are plottable (not dictionaries or other complex types)
+            if values and all(not isinstance(item, dict) for item in values):
+                plt.figure(figsize=(10, 6))
+                plt.plot(values)
+                plt.title(f'{key.replace("_", " ").title()}')
+                plt.xlabel('Step')
+                plt.ylabel('Value')
+                plt.grid(True)
+                plt.savefig(f"{save_path}/{key}_{timestamp}.png")
+                plt.close()
     
     logging.info(f"Training plots saved to {save_path}")
 
