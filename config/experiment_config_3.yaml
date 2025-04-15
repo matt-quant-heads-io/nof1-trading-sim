@@ -6,7 +6,7 @@ system:
 
 data:
   historical:
-    data_path: "data/cleaned_macro_df_first_100000_mins.csv"
+    data_path: "data/cleaned_macro_df_last_10000_mins.csv"
     train_test_split: 0.99
     price_column: close_CL
     atr_column: atr_60m_CL
@@ -663,17 +663,17 @@ data:
     normalize_features: true
 
 simulation:
-  max_steps_per_episode: 1000
+  max_steps_per_episode: 512
   warmup_steps: 0
   tick_size: 0.01
   initial_capital: 10000.0
-  transaction_fee_pct: 0.0005
+  transaction_fee_pct: 0.0018
   slippage_model: "fixed"
-  slippage_value: 0.0001
-  position_size_fixed_dollar: 1000.00
-  pt_atr_mult: 1000
-  sl_atr_mult: 5
-  live_plot: true
+  slippage_factor: 0.001
+  position_size_fixed_dollar: 500.00
+  pt_atr_mult: 10
+  sl_atr_mult: 10
+  live_plot: false
 
 
 agents:
