@@ -1,10 +1,11 @@
 __pycache__
 logs
+logs_qd
 models
 results
 trading_sim.log
-figs
-data
+# figs
+# data
 
 # Prerequisites
 *.d

@@ -126,7 +126,9 @@ class RayEvaluator:
     Ray Actor for evaluation that maintains its own environment and policy network.
     This allows reuse of environment and policy objects across multiple evaluations.
     """
-    def __init__(self, n_feats, hidden_size, history_length):
+    def __init__(self, n_feats, hidden_size,
+                #  history_length
+        ):
         # Set device to CPU for Ray workers
         self.device = "cpu"
         
@@ -140,7 +142,8 @@ class RayEvaluator:
         
         # Create policy network
         self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
-                                   history_length=history_length, device=self.device).to(self.device)
+                                   history_length=history_length,
+                                   device=self.device).to(self.device)
         
         # Put policy in evaluation mode
         self.policy.eval()
@@ -157,7 +160,8 @@ class RayEvaluator:
         return evaluate_solution(solution, self.env, self.policy, eval_repeats, rollout_steps, seed)
 
 
-def train_qd(archive_size=(10, 10), 
+def train_qd(exp_dir,
+             archive_size=(10, 10), 
              algorithm="cmame",
              batch_size=30,
              num_iterations=100, 
@@ -204,7 +208,9 @@ def train_qd(archive_size=(10, 10),
         
         # Create Ray evaluators (one per CPU for optimal resource utilization)
         num_evaluators = min(ray.cluster_resources()['CPU'], batch_size)
-        evaluators = [RayEvaluator.remote(n_features, hidden_size, history_length) 
+        evaluators = [RayEvaluator.remote(n_features, hidden_size,
+                                        #   history_length
+                                        ) 
                      for _ in range(int(num_evaluators))]
         print(f"Created {len(evaluators)} Ray evaluators")
     
@@ -221,7 +227,8 @@ def train_qd(archive_size=(10, 10),
     
     # Create a policy network template (reused for efficiency)
     policy = FrameStackPolicyNetwork(n_feats=n_features, hidden_size=hidden_size, 
-                                    history_length=history_length, device=device).to(device)
+                                    # history_length=history_length,
+                                    device=device).to(device)
     
     # Put policy in evaluation mode
     policy.eval()
@@ -247,7 +254,7 @@ def train_qd(archive_size=(10, 10),
     )
     
     # Create emitters
-    if algorithm == "cmame":
+    if algorithm == "CMAME":
         # Use EvolutionStrategyEmitter for QD optimization
         emitter = EvolutionStrategyEmitter(
             archive=archive,
@@ -255,7 +262,7 @@ def train_qd(archive_size=(10, 10),
             sigma0=0.1,                # Initial step size
             batch_size=batch_size,     # Number of solutions per iteration
         )
-    elif algorithm == "me":
+    elif algorithm == "ME":
         emitter = GaussianEmitter(
             archive=archive,
             x0=np.zeros(param_count),  # Initial solution is all zeros
@@ -282,10 +289,37 @@ def train_qd(archive_size=(10, 10),
     best_objective = float('-inf')
     
     # Progress bar
-    pbar = tqdm.tqdm(range(num_iterations))
+    pbar = tqdm.tqdm(total=num_iterations)
+
+    models_dir = os.path.join(exp_dir, "models")
+    checkpoint_dirs = glob.glob(os.path.join(models_dir, "checkpoint_iter_*"))
+    # Get latest checkpoint
+    if checkpoint_dirs:
+        # sort checkpoint directories by iteration number
+        checkpoint_dirs.sort(key=lambda x: int(x.split("_")[-1]))
+        latest_checkpoint = checkpoint_dirs[-1]
+        iteration = int(latest_checkpoint.split("_")[-1])
+        print(f"Latest checkpoint found: {latest_checkpoint}")
+        print("Loaded checkpoint successfully")
+        archive_path = os.path.join(latest_checkpoint, "full_archive.pkl")
+        with open(archive_path, "rb") as f:
+            archive = pickle.load(f)
+        # Load archive data
+        emitter_paths = glob.glob(os.path.join(latest_checkpoint, "emitter_*.pkl"))
+        emitters = []
+        for i, emitter_path in enumerate(emitter_paths):
+            with open(emitter_path, "rb") as f:
+                emitter_i = pickle.load(f)
+            # Load emitter data
+            emitters.append(emitter_i)
+        scheduler = Scheduler(archive, emitters)
+        logs = pickle.load(open(os.path.join(latest_checkpoint, "logs.pkl"), "rb"))
+        
+    else:
+        iteration = 0
     
     # Main QD optimization loop
-    for iteration in pbar:
+    while iteration < num_iterations:
         # Start timer for this iteration
         start_time = time.time()
         
@@ -402,35 +436,40 @@ def train_qd(archive_size=(10, 10),
             f"Max Portfolio: ${max_objective:.2f}, "
             f"Env steps/sec: {env_steps_per_second:.1f}{eta_str}"
         )
+        pbar.update(1)
         
         # Generate and save visualizations at save intervals
         # Skip iteration 0 (first iteration) to avoid saving less meaningful initial results
+        fig_dir = os.path.join(exp_dir, "figs")
         if (iteration + 1) % save_interval == 0 or iteration == num_iterations - 1:
-            print(f"\nGenerating visualizations at iteration {iteration+1}...")
+            logging.info(f"\nGenerating visualizations at iteration {iteration+1}...")
             # Generate intermediate visualizations
             fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = plot_archive_heatmap(
-                scheduler, iteration + 1, logs, save_dir="figs", is_final=False
+                scheduler, iteration + 1, logs, save_dir=fig_dir, is_final=False
             )
-            print(f"Saved archive visualization to {fig_path}")
-            print(f"Saved portfolio performance plot to {portfolio_path}")
-            print(f"Saved portfolio gain plot to {portfolio_gain_path}")
-            print(f"Saved per-iteration performance plot to {iter_performance_path}")
+            logging.info(f"Saved archive visualization to {fig_path}")
+            logging.info(f"Saved portfolio performance plot to {portfolio_path}")
+            logging.info(f"Saved portfolio gain plot to {portfolio_gain_path}")
+            logging.info(f"Saved per-iteration performance plot to {iter_performance_path}")
             
             # Save top policies at checkpoints
             if len(archive) > 0:
-                checkpoint_dir = f"models/qd/checkpoint_iter_{iteration+1}"
+                # checkpoint_dir = f"models/qd/checkpoint_iter_{iteration+1}"
+                checkpoint_dir = os.path.join(exp_dir, "models", f"checkpoint_iter_{iteration+1}")
                 os.makedirs(checkpoint_dir, exist_ok=True)
-                save_best_policies(
+                save_checkpoint(
                     scheduler,
+                    logs=logs,
                     output_dir=checkpoint_dir,
                     n_feats=n_features,
                     hidden_size=hidden_size,
-                    history_length=history_length,
+                    # history_length=history_length,
                     device=device,
                     top_k=3  # Save fewer policies at checkpoints
                 )
-                print(f"Saved checkpoint policies to {checkpoint_dir}")
-            print("")  # Add empty line after checkpoint output
+                logging.info(f"Saved checkpoint policies to {checkpoint_dir}")
+            logging.info("")  # Add empty line after checkpoint output
+        iteration += 1
     
     # Shutdown Ray if we initialized it
     if use_ray and ray.is_initialized():
@@ -442,8 +481,10 @@ def train_qd(archive_size=(10, 10),
     
     return scheduler, logs
 
-def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
-                       hidden_size=64, history_length=4, device="cpu", top_k=5):
+def save_checkpoint(scheduler, logs, output_dir="models/qd", n_feats=50,
+                       hidden_size=64,
+                    #    history_length=4, 
+                       device="cpu", top_k=5, save_emitters=True, save_logs=True):
     """
     Saves the best policies from the QD archive.
     
@@ -492,7 +533,8 @@ def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
                 
                 # Create a policy with these parameters
                 policy = FrameStackPolicyNetwork(n_feats==n_feats, hidden_size=hidden_size, 
-                                               history_length=history_length, device=device).to(device)
+                                            #    history_length=history_length,
+                                            device=device).to(device)
                 
                 # Set parameters
                 param_tensor = torch.tensor(solution, dtype=torch.float32, device=device)
@@ -502,13 +544,27 @@ def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
                 behavior_str = f"{behavior[0]:.2f}_{behavior[1]:.2f}".replace(".", "_")
                 model_path = os.path.join(output_dir, f"policy_rank{i+1}_value{objective:.2f}_behavior{behavior_str}.pt")
                 torch.save(policy.state_dict(), model_path)
-                print(f"Saved policy {i+1}/{top_k} with portfolio value ${objective:.2f} to {model_path}")
+                logging.info(f"Saved policy {i+1}/{top_k} with portfolio value ${objective:.2f} to {model_path}")
         
         # Save the full archive as a pickle file for later analysis
         archive_path = os.path.join(output_dir, "full_archive.pkl")
         with open(archive_path, "wb") as f:
-            pickle.dump(archive_data, f)
-        print(f"Saved full archive with {len(archive)} solutions to {archive_path}")
+            # pickle.dump(archive_data, f)
+            pickle.dump(archive, f)
+        logging.info(f"Saved full archive with {len(archive)} solutions to {archive_path}")
+
+        if save_emitters:
+            # Save emitters (if applicable)
+            for i, emitter in enumerate(scheduler.emitters):
+                emitter_path = os.path.join(output_dir, f"emitter_{i+1}.pkl")
+                with open(emitter_path, "wb") as f:
+                    pickle.dump(emitter, f)
+                logging.info(f"Saved emitter {i+1} to {emitter_path}")
+        
+        if save_logs:
+            logs_dir = os.path.join(output_dir, "logs.pkl")
+            with open(logs_dir, "wb") as f:
+                pickle.dump(logs, f)
     else:
         print("No solutions in archive to save.")
 
@@ -827,7 +883,8 @@ def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=F
     return fig_path, portfolio_path, portfolio_gain_path, iter_performance_path
 
 def validate_diverse_policies(scheduler, n_feats=50, hidden_size=64, 
-                             history_length=4, device="cpu", num_rollouts=20, 
+                            #  history_length=4,
+                            device="cpu", num_rollouts=20, 
                              rollout_steps=100, num_policies=5):
     """
     Validate a diverse set of policies from the archive.
@@ -939,7 +996,8 @@ def validate_diverse_policies(scheduler, n_feats=50, hidden_size=64,
         
         # Create policy with these parameters
         policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
-                                        history_length=history_length, device=device).to(device)
+                                        # history_length=history_length,
+                                        device=device).to(device)
         
         # Set parameters
         param_tensor = torch.tensor(solution, dtype=torch.float32, device=device)
@@ -1050,27 +1108,36 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     # Return the average percent gain as our primary metric
     return avg_return
 
+def get_exp_dir():
+    return os.path.join(
+        "logs_qd",
+        f"{args.algorithm}_archive-{args.archive_size[0]}x{args.archive_size[1]}_"
+        f"batch-{args.batch_size}_rollout-{args.rollout_steps}_"
+        f"eval-repeats-{args.eval_repeats}_hidden-{args.hidden_size}_"
+        f"_seed-{args.seed}"
+    )
+
 N_ACTIONS = 3
 N_FEATS = 50
 
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
-    parser.add_argument("--algorithm", type=str, default="me", help="Algorithm to use (me, cmame)", choices=["me", "cmame"])
+    parser.add_argument("--algorithm", type=str, default="ME", help="Algorithm to use (me, cmame)", choices=["ME", "CMAME"])
     parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10], help="Size of the behavior grid (rows, cols)")
     parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
     parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
     parser.add_argument("--rollout_steps", type=int, default=100, help="Number of steps in each rollout")
     parser.add_argument("--eval_repeats", type=int, default=16, help="Number of evaluations per solution to reduce variance")
     parser.add_argument("--hidden_size", type=int, default=64, help="Size of hidden layers in the policy network")
-    parser.add_argument("--history_length", type=int, default=4, help="Number of historical frames to use")
+    parser.add_argument("--history_length", type=int, default=1, help="Number of historical frames to use")
     parser.add_argument("--use_ray", action="store_true", help="Whether to use Ray for distributed evaluation")
     parser.add_argument("--num_cpus", type=int, default=None, help="Number of CPUs to use for Ray")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cpu, cuda, mps)")
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
     parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
-    parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level.upper())
@@ -1089,11 +1156,15 @@ if __name__ == "__main__":
     print(f"Using discrete action space with {N_ACTIONS} actions per stock (Buy, Hold, Sell)")
     
     # Create directories for output
-    os.makedirs("models/qd", exist_ok=True)
-    os.makedirs("figs", exist_ok=True)
+    # os.makedirs("models/qd", exist_ok=True)
+    # os.makedirs("figs", exist_ok=True)
+    os.makedirs("logs_qd", exist_ok=True)
+
+    exp_dir = get_exp_dir()
     
     # Run QD training
     scheduler, logs = train_qd(
+        exp_dir=exp_dir,
         algorithm=args.algorithm,
         archive_size=tuple(args.archive_size),
         batch_size=args.batch_size,
@@ -1111,8 +1182,9 @@ if __name__ == "__main__":
     
     # Generate and save final archive heatmap
     print("\n=== Generating Final Archive Visualization ===")
+    fig_dir = os.path.join(exp_dir, "figs")
     main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = plot_archive_heatmap(
-        scheduler, args.num_iterations, logs, save_dir="figs", is_final=True
+        scheduler, args.num_iterations, logs, save_dir=fig_dir, is_final=True
     )
     print(f"Final archive visualization saved to {main_fig_path}")
     print(f"Final portfolio performance plot saved to {portfolio_path}")
@@ -1130,12 +1202,14 @@ if __name__ == "__main__":
     
     # Save the best policies from the archive
     print("\n=== Saving Top Policies from Archive ===")
-    save_best_policies(
+    models_dir = os.path.join(exp_dir, "models")
+    save_checkpoint(
         scheduler, 
-        output_dir="models/qd",
+        logs=logs,
+        output_dir=models_dir,
         n_feats=n_feats,
         hidden_size=args.hidden_size,
-        history_length=args.history_length,
+        # history_length=args.history_length,
         device=device,
         top_k=5
     )
@@ -1146,16 +1220,17 @@ if __name__ == "__main__":
         scheduler,
         n_feats=n_feats,
         hidden_size=args.hidden_size,
-        history_length=args.history_length,
+        # history_length=args.history_length,
         device=device,
         num_rollouts=20,
         rollout_steps=args.rollout_steps,
         num_policies=5
     )
-    plot_archive_animation()
+    plot_archive_animation(save_dir=fig_dir)
     
     # Save validation results
-    validation_path = "models/qd/validation_results.pkl"
+    # validation_path = "models/qd/validation_results.pkl"
+    validation_path = os.path.join(models_dir, "validation_results.pkl")
     with open(validation_path, "wb") as f:
         pickle.dump(validation_results, f)
     print(f"Validation results saved to {validation_path}")
