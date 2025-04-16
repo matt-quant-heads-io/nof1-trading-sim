@@ -5,6 +5,7 @@ import gymnasium as gym
 from typing import Dict, Any, List, Tuple, Optional, Union, Type
 from stable_baselines3 import PPO, A2C, SAC, TD3, DQN
 from stable_baselines3.common.callbacks import BaseCallback
+from nof1.agents.sb3_ac_ppo import CustomActorCriticPolicy
 
 from nof1.agents.base_agent import BaseAgent
 from nof1.agents.sb3_ac_ppo import Nof1PPO
@@ -115,7 +116,7 @@ class RLAgent(BaseAgent):
             algo_params["sde_sample_freq"] = self.config.rl.sde_sample_freq
             algo_params["target_kl"] = self.config.rl.target_kl
             
-            return Nof1PPO(self.policy_type, self.env, **algo_params)
+            return Nof1PPO(CustomActorCriticPolicy, self.env, **algo_params)
             
         elif self.algorithm == 'A2C':
             algo_params["n_steps"] = self.config.get('rl.n_steps', 5)

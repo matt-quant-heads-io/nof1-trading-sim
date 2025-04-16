@@ -89,6 +89,7 @@ class TradingEnvironment(gym.Env):
         self.episode_rewards = []
         self.pt_atr_mult = self.config.simulation.pt_atr_mult
         self.sl_atr_mult = self.config.simulation.sl_atr_mult
+        self.reward_obj = get_reward_function(config)
         
         # Initialize state
         self.reset()
@@ -128,6 +129,8 @@ class TradingEnvironment(gym.Env):
         self._infos = []  # Reset the info history
         self.unrealized_pnl = 0.0
         self.realized_pnl = 0.0
+        self.reward_obj = None
+        self.reward_obj = get_reward_function(self.config)
         
         # Initial info
         info = {
@@ -163,7 +166,7 @@ class TradingEnvironment(gym.Env):
         
         
         # NOTE: Calculate reward
-        reward = self._calculate_reward(action, info)
+        reward = self._calculate_reward(info['step_return'], info)
         self.episode_rewards.append(reward)
         
         # Store info for plotting
@@ -414,6 +417,7 @@ class TradingEnvironment(gym.Env):
 
         self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
         self.returns.append(self.capital)
+
         step_return = self.returns[-1] - self.returns[-2]
         info['step_return'] = step_return
 
@@ -451,7 +455,7 @@ class TradingEnvironment(gym.Env):
         
         return info
     
-    def _calculate_reward(self, action: int, info: Dict[str, Any]) -> float:
+    def _calculate_reward(self, reward: int, info: Dict[str, Any]) -> float:
         """
         Calculate the reward for the current step.
         
@@ -462,7 +466,8 @@ class TradingEnvironment(gym.Env):
         Returns:
             Reward value
         """
-        reward = info.get('step_return', 0.0)
+        
+        reward = self.reward_obj.calculate_reward(reward, info)
         
         return reward
     

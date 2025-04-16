@@ -663,7 +663,7 @@ data:
     normalize_features: true
 
 simulation:
-  max_steps_per_episode: 512
+  max_steps_per_episode: 1000
   warmup_steps: 0
   tick_size: 0.01
   initial_capital: 10000.0
@@ -673,7 +673,7 @@ simulation:
   position_size_fixed_dollar: 500.00
   pt_atr_mult: 10
   sl_atr_mult: 10
-  live_plot: false
+  live_plot: true
 
 
 agents:
@@ -697,8 +697,8 @@ rl:
   algorithm: "PPO"
   policy_type: "MlpPolicy"
   learning_rate: 0.0003
-  n_steps: 64
-  batch_size: 64
+  n_steps: 256
+  batch_size: 256
   n_epochs: 1000
   gamma: 0.99
   gae_lambda: 0.95
@@ -714,7 +714,7 @@ rl:
   create_eval_env: true
   verbose: 1
   device: "auto"
-  reward_type: simple_pnl
+  reward_type: sharpe_ratio
 
 backtesting:
   metrics:
