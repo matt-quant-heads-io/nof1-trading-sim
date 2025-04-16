@@ -182,7 +182,6 @@ class TradingEnvironment(gym.Env):
         if terminated:
             info.update(self._get_episode_summary())
             
-
         return self.current_state, reward, terminated, truncated, info
     
     def _create_returns_plot(self):
@@ -726,7 +725,7 @@ class TradingEnvironment(gym.Env):
             all_rewards: List of rewards received
         """
         # Reset environment - this will initialize different environments for each batch element
-        state = self.reset(batch_size)
+        obs, info = self.reset()
         
         # If policy has a reset method (e.g., for RNNs), reset it with the correct batch size
         if hasattr(policy, 'reset'):
@@ -736,28 +735,28 @@ class TradingEnvironment(gym.Env):
                 policy.reset()
         
         # Initialize lists to store trajectory
-        all_states = [state]
+        all_obs = [obs]
         all_actions = []
         all_rewards = []
         
         # Accumulate total reward
-        total_rewards = torch.zeros(batch_size if batch_size else (), device=self.device)
+        total_rewards = torch.zeros(batch_size if batch_size else ())
         
         # Perform rollout
         for _ in range(n_steps):
             # Get action from policy
-            action = policy(state)
+            action = policy(obs)
             all_actions.append(action)
             
             # Take step in environment
-            next_state, reward, done = self.step(state, action)
+            next_obs, reward, terminated, truncated, info = self.step(action)
             all_rewards.append(reward)
             
             # Accumulate rewards
             total_rewards += reward
             
             # Update state
-            state = next_state
-            all_states.append(state)
+            obs = next_obs
+            all_obs.append(obs)
         
-        return total_rewards, all_states, all_actions, all_rewards
+        return total_rewards, all_obs, all_actions, all_rewards

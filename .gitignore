@@ -3,6 +3,8 @@ logs
 models
 results
 trading_sim.log
+figs
+data
 
 # Prerequisites
 *.d
