@@ -5,9 +5,12 @@ Stonks: Training with Quality Diversity (QD) Optimization
 This module implements training of the Stonks environment using
 Quality Diversity (QD) optimization with pyribs.
 """
+import glob
+import logging
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
 
+import gymnasium
+import imageio
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -21,16 +24,18 @@ import pickle
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from ribs.archives import GridArchive
-from ribs.emitters import EvolutionStrategyEmitter
+from ribs.emitters import EvolutionStrategyEmitter, GaussianEmitter
 from ribs.schedulers import Scheduler
 from ribs.visualize import grid_archive_heatmap
 
-# from stonks import StonksEnv, FrameStackPolicyNetwork, validate_policy, DEFAULT_N_STOCKS, N_ACTIONS, BUY, SELL, HOLD
 from nof1 import TradingEnvironment
+from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
+from nof1.utils.config_manager import ConfigManager
 from models import FrameStackPolicyNetwork
+os.environ["OMP_NUM_THREADS"] = "1"
 
-BUY = 0
-SELL = 0
+BUY = 1
+SELL = 2
 
 # Function for evaluation with measure calculation
 def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100, seed=0, n_features=50):
@@ -54,7 +59,7 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     np.random.seed(seed)
     
     # Set parameters from solution
-    param_tensor = torch.tensor(solution, dtype=torch.float32, device=env.device)
+    param_tensor = torch.tensor(solution, dtype=torch.float32)
     vector_to_parameters(param_tensor, policy.parameters())
     
     # Evaluate policy with batched execution
@@ -64,17 +69,18 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
             
     # Calculate final portfolio values
     final_states = all_states[-1]
-    final_cash = final_states["cash"]
-    final_positions = final_states["positions"]
-    final_prices = final_states["prices"]
+    # final_cash = final_states["cash"]
+    # final_positions = final_states["positions"]
+    # final_prices = final_states["prices"]
     
     # Calculate final portfolio value for each evaluation
-    final_values = final_cash + (final_positions * final_prices).sum(dim=-1)
+    # final_values = final_cash + (final_positions * final_prices).sum(dim=-1)
     
     # Calculate action frequencies for behavioral measures - optimized vectorized version
     # Convert all one-hot actions to indices in a single operation
     # Shape: [time_steps, batch_size, n_stocks, n_actions] -> [time_steps, batch_size, n_stocks]
-    action_indices_tensor = torch.cat([torch.argmax(a, dim=-1).unsqueeze(0) for a in all_actions], dim=0)
+    # action_indices_tensor = torch.cat([torch.argmax(a, dim=-1).unsqueeze(0) for a in all_actions], dim=0)
+    action_indices_tensor = torch.Tensor(all_actions)
     
     # Create masks for buy and sell actions in a single vectorized operation
     # These will be 1.0 where the condition is true, 0.0 elsewhere
@@ -95,13 +101,13 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     
     # Trading activity - average across stocks and batch
     # Shape: [batch_size, n_stocks] -> [batch_size] -> scalar
-    trade_activity = (buy_pct + sell_pct).mean(dim=1).mean().item()
+    trade_activity = (buy_pct + sell_pct).item()
     
     # Buy vs sell ratio - add small epsilon to avoid division by zero
     # Use mean over batch elements
     with torch.no_grad():
         eps = 1e-6
-        buy_sell_ratio = (buy_pct / (sell_pct + eps)).mean(dim=1).mean().item()
+        buy_sell_ratio = (buy_pct / (sell_pct + eps)).mean().item()
         # Normalize to [0, 1] range assuming reasonable bounds
         buy_sell_ratio = min(max(buy_sell_ratio / 5.0, 0.0), 1.0)
     
@@ -109,7 +115,8 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     measures = np.array([trade_activity, buy_sell_ratio])
     
     # Use mean portfolio value as the objective to maximize
-    objective = final_values.mean().item()
+    # objective = final_values.mean().item()
+    objective = total_rewards.sum().item()
     
     return objective, measures
 
@@ -119,15 +126,20 @@ class RayEvaluator:
     Ray Actor for evaluation that maintains its own environment and policy network.
     This allows reuse of environment and policy objects across multiple evaluations.
     """
-    def __init__(self, n_stocks, hidden_size, history_length):
+    def __init__(self, n_feats, hidden_size, history_length):
         # Set device to CPU for Ray workers
         self.device = "cpu"
         
         # Create environment
-        self.env = TradingEnvironment(n_stocks=n_stocks, device=self.device)
+        config_manager = ConfigManager(args.config)
+        config = config_manager.config
+        data_reader = HistoricalDataReader(config_manager)
+        states, prices, atrs, timestamps = data_reader.preprocess_data()
+        # Create environment to get dimensions
+        self.env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
         
         # Create policy network
-        self.policy = FrameStackPolicyNetwork(n_stocks=n_stocks, hidden_size=hidden_size, 
+        self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
                                    history_length=history_length, device=self.device).to(self.device)
         
         # Put policy in evaluation mode
@@ -144,7 +156,9 @@ class RayEvaluator:
         # Evaluate the solution
         return evaluate_solution(solution, self.env, self.policy, eval_repeats, rollout_steps, seed)
 
+
 def train_qd(archive_size=(10, 10), 
+             algorithm="cmame",
              batch_size=30,
              num_iterations=100, 
              rollout_steps=100,
@@ -156,7 +170,7 @@ def train_qd(archive_size=(10, 10),
              num_cpus=None,
              seed=0,
              save_interval=10,
-             n_features=50,
+            #  n_features=50,
         ):
     """
     Train a collection of diverse policies using QD optimization.
@@ -190,15 +204,23 @@ def train_qd(archive_size=(10, 10),
         
         # Create Ray evaluators (one per CPU for optimal resource utilization)
         num_evaluators = min(ray.cluster_resources()['CPU'], batch_size)
-        evaluators = [RayEvaluator.remote(N_F, hidden_size, history_length) 
+        evaluators = [RayEvaluator.remote(n_features, hidden_size, history_length) 
                      for _ in range(int(num_evaluators))]
         print(f"Created {len(evaluators)} Ray evaluators")
     
+
+    config_manager = ConfigManager(args.config)
+    config = config_manager.config
+    data_reader = HistoricalDataReader(config_manager)
+    states, prices, atrs, timestamps = data_reader.preprocess_data()
     # Create environment to get dimensions
-    env = TradingEnvironment()
+    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
+    assert isinstance(env.observation_space, gymnasium.spaces.Box), "Observation space must be Box"
+    assert len(env.observation_space.shape) == 1, "Observation space must be 1D"
+    n_features = env.observation_space.shape[0]
     
     # Create a policy network template (reused for efficiency)
-    policy = FrameStackPolicyNetwork(n_stocks=n_features, hidden_size=hidden_size, 
+    policy = FrameStackPolicyNetwork(n_feats=n_features, hidden_size=hidden_size, 
                                     history_length=history_length, device=device).to(device)
     
     # Put policy in evaluation mode
@@ -225,13 +247,23 @@ def train_qd(archive_size=(10, 10),
     )
     
     # Create emitters
-    # Use EvolutionStrategyEmitter for QD optimization
-    emitter = EvolutionStrategyEmitter(
-        archive=archive,
-        x0=np.zeros(param_count),  # Initial solution is all zeros (better than random initialization)
-        sigma0=0.1,                # Initial step size
-        batch_size=batch_size,     # Number of solutions per iteration
-    )
+    if algorithm == "cmame":
+        # Use EvolutionStrategyEmitter for QD optimization
+        emitter = EvolutionStrategyEmitter(
+            archive=archive,
+            x0=np.zeros(param_count),  # Initial solution is all zeros (better than random initialization)
+            sigma0=0.1,                # Initial step size
+            batch_size=batch_size,     # Number of solutions per iteration
+        )
+    elif algorithm == "me":
+        emitter = GaussianEmitter(
+            archive=archive,
+            x0=np.zeros(param_count),  # Initial solution is all zeros
+            sigma=0.1,                # Standard deviation of Gaussian noise
+            batch_size=batch_size,     # Number of solutions per iteration
+        )
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}. Use 'cmame' or 'me'.")
     
     # Create scheduler with single emitter
     scheduler = Scheduler(archive, [emitter])
@@ -270,6 +302,7 @@ def train_qd(archive_size=(10, 10),
             
             # Round-robin assignment of solutions to evaluators
             for i, solution in enumerate(solutions):
+                logging.info(f"Evaluating solution {i+1}/{len(solutions)}")
                 # Select evaluator using round-robin
                 evaluator = evaluators[i % len(evaluators)]
                 
@@ -424,6 +457,14 @@ def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
         top_k: Number of top policies to save
     """
     archive = scheduler.archive
+
+    config_manager = ConfigManager(args.config)
+    config = config_manager.config
+    data_reader = HistoricalDataReader(config_manager)
+    states, prices, atrs, timestamps = data_reader.preprocess_data()
+    # Create environment to get dimensions
+    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
+    n_feats = env.observation_space.shape[0]
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -450,7 +491,7 @@ def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
                 behavior = measures[idx]
                 
                 # Create a policy with these parameters
-                policy = FrameStackPolicyNetwork(n_stocks=n_feats, hidden_size=hidden_size, 
+                policy = FrameStackPolicyNetwork(n_feats==n_feats, hidden_size=hidden_size, 
                                                history_length=history_length, device=device).to(device)
                 
                 # Set parameters
@@ -470,6 +511,17 @@ def save_best_policies(scheduler, output_dir="models/qd", n_feats=50,
         print(f"Saved full archive with {len(archive)} solutions to {archive_path}")
     else:
         print("No solutions in archive to save.")
+
+def plot_archive_animation(save_dir="figs"):
+    iter_figs = glob.glob(os.path.join(save_dir, "archive_iter_*.png"))
+    # sort by iteration number
+    iter_figs.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    # Create an animated GIF from the images
+    images = []
+    for filename in iter_figs:
+        images.append(imageio.imread(filename))
+    gif_path = os.path.join(save_dir, "archive_animation.gif")
+    imageio.mimsave(gif_path, images, duration=0.5)
 
 def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=False):
     """
@@ -886,7 +938,7 @@ def validate_diverse_policies(scheduler, n_feats=50, hidden_size=64,
         print(f"Trading Activity: {behavior[0]:.2f}, Buy/Sell Ratio: {behavior[1]:.2f}")
         
         # Create policy with these parameters
-        policy = FrameStackPolicyNetwork(n_stocks=n_feats, hidden_size=hidden_size, 
+        policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
                                         history_length=history_length, device=device).to(device)
         
         # Set parameters
@@ -906,12 +958,105 @@ def validate_diverse_policies(scheduler, n_feats=50, hidden_size=64,
     
     return results
 
+
+
+def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu"):
+    """
+    Validate a trained policy by running multiple rollouts and reporting average return and portfolio performance.
+    
+    Args:
+        policy: The policy to validate
+        num_rollouts: Number of rollouts to run
+        steps_per_rollout: Number of steps in each rollout
+        device: Device to run on
+        
+    Returns:
+        float: Average portfolio percentage gain across all rollouts
+    """
+    config_manager = ConfigManager(args.config)
+    config = config_manager.config
+    data_reader = HistoricalDataReader(config_manager)
+    states, prices, atrs, timestamps = data_reader.preprocess_data()
+    # Create environment to get dimensions
+    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
+
+    # Initialize lists to store returns and final portfolio values
+    all_returns = []
+    final_portfolio_values = []
+    initial_portfolio_values = []
+    percent_gains = []
+    final_positions_list = []
+    
+    # Run num_rollouts sequential evaluations
+    for i in range(num_rollouts):
+        # Perform rollout
+        with torch.no_grad():
+            total_rewards, states, _, _ = env.rollout(policy, None, steps_per_rollout)
+        
+        # Calculate initial and final portfolio value
+        initial_state = states[0]
+        final_state = states[-1]
+        
+        # initial_cash = initial_state["cash"]
+        # initial_positions = initial_state["positions"]
+        # initial_prices = initial_state["prices"]
+        # initial_value = initial_cash + (initial_positions * initial_prices).sum()
+        
+        # final_cash = final_state["cash"]
+        # final_positions = final_state["positions"]
+        # final_prices = final_state["prices"]
+        # final_value = final_cash + (final_positions * final_prices).sum()
+        
+        # Calculate market-only final value (if we just held cash and didn't trade)
+        # This represents how the market performed without any trading
+        # market_final_value = initial_cash + (initial_positions * final_prices).sum()
+        
+        # Calculate percent gain compared to market for this rollout with safety clipping
+        # rollout_percent_gain = (final_value - market_final_value) / market_final_value
+        
+        # Clip to reasonable values to prevent numerical instability (-10000% to 10000%)
+        # rollout_percent_gain = torch.clamp(rollout_percent_gain, min=-100.0, max=100.0)
+        
+        # Convert to percentage for display
+        # rollout_percent_gain = rollout_percent_gain * 100
+        
+        # Add to lists
+        all_returns.append(total_rewards.item())
+        # initial_portfolio_values.append(initial_value.item())
+        # final_portfolio_values.append(final_value.item())
+        # percent_gains.append(rollout_percent_gain.item())
+        # final_positions_list.append(final_positions.cpu().numpy())
+    
+    # Calculate statistics
+    avg_return = sum(all_returns) / num_rollouts
+    avg_initial_value = sum(initial_portfolio_values) / num_rollouts
+    avg_final_value = sum(final_portfolio_values) / num_rollouts
+    avg_percent_gain = sum(percent_gains) / num_rollouts
+    
+    # Calculate standard deviation of percent gains
+    std_percent_gain = np.std(percent_gains)
+    
+    # Calculate average final positions
+    avg_final_positions = np.mean(final_positions_list, axis=0)
+    
+    print(f"=== Portfolio Performance ===")
+    print(f"Average Initial Portfolio Value: ${avg_initial_value:.2f}")
+    print(f"Average Final Portfolio Value: ${avg_final_value:.2f}")
+    print(f"Average Percent Gain vs Market: {avg_percent_gain:.2f}% (±{std_percent_gain:.2f}%)")
+    print(f"\n=== Trading Statistics ===")
+    print(f"Average Cumulative Reward: {avg_return:.4f}")
+    print(f"Average Final Positions: {avg_final_positions}")
+    
+    # Return the average percent gain as our primary metric
+    return avg_return
+
 N_ACTIONS = 3
 N_FEATS = 50
 
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
+    parser.add_argument("--algorithm", type=str, default="me", help="Algorithm to use (me, cmame)", choices=["me", "cmame"])
     parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10], help="Size of the behavior grid (rows, cols)")
     parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
     parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
@@ -924,7 +1069,11 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cpu, cuda, mps)")
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
+    parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
+    parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
     args = parser.parse_args()
+
+    logging.basicConfig(level=args.log_level.upper())
     
     print("=== Training Stonks Environment with Quality Diversity (QD) Optimization ===")
     
@@ -945,6 +1094,7 @@ if __name__ == "__main__":
     
     # Run QD training
     scheduler, logs = train_qd(
+        algorithm=args.algorithm,
         archive_size=tuple(args.archive_size),
         batch_size=args.batch_size,
         num_iterations=args.num_iterations,
@@ -969,13 +1119,21 @@ if __name__ == "__main__":
     print(f"Final portfolio gain plot saved to {portfolio_gain_path}")
     print(f"Final per-iteration performance plot saved to {iter_performance_path}")
     print(f"Final detailed heatmap saved to {summary_fig_path}")
+
+    config_manager = ConfigManager(args.config)
+    config = config_manager.config
+    data_reader = HistoricalDataReader(config_manager)
+    states, prices, atrs, timestamps = data_reader.preprocess_data()
+    # Create environment to get dimensions
+    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
+    n_feats = env.observation_space.shape[0]
     
     # Save the best policies from the archive
     print("\n=== Saving Top Policies from Archive ===")
     save_best_policies(
         scheduler, 
         output_dir="models/qd",
-        n_feats=N_FEATS,
+        n_feats=n_feats,
         hidden_size=args.hidden_size,
         history_length=args.history_length,
         device=device,
@@ -986,7 +1144,7 @@ if __name__ == "__main__":
     print("\n=== Validating Diverse Policies ===")
     validation_results = validate_diverse_policies(
         scheduler,
-        n_feats=N_FEATS,
+        n_feats=n_feats,
         hidden_size=args.hidden_size,
         history_length=args.history_length,
         device=device,
@@ -994,6 +1152,7 @@ if __name__ == "__main__":
         rollout_steps=args.rollout_steps,
         num_policies=5
     )
+    plot_archive_animation()
     
     # Save validation results
     validation_path = "models/qd/validation_results.pkl"
