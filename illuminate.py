@@ -11,6 +11,7 @@ import os
 
 import gymnasium
 import imageio
+from pathlib import Path
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -301,11 +302,12 @@ def train_qd(exp_dir,
         iteration = int(latest_checkpoint.split("_")[-1])
         print(f"Latest checkpoint found: {latest_checkpoint}")
         print("Loaded checkpoint successfully")
-        archive_path = os.path.join(latest_checkpoint, "full_archive.pkl")
+        archive_path = os.path.join(models_dir, "latest_full_archive.pkl")
         with open(archive_path, "rb") as f:
             archive = pickle.load(f)
         # Load archive data
-        emitter_paths = glob.glob(os.path.join(latest_checkpoint, "emitter_*.pkl"))
+        emitter_paths = glob.glob(os.path.join(models_dir, "latest_emitter_*.pkl"))
+        emitter_paths = sorted(emitter_paths, key=lambda x: int(x.split("_")[-1].split(".")[0]))
         emitters = []
         for i, emitter_path in enumerate(emitter_paths):
             with open(emitter_path, "rb") as f:
@@ -313,7 +315,7 @@ def train_qd(exp_dir,
             # Load emitter data
             emitters.append(emitter_i)
         scheduler = Scheduler(archive, emitters)
-        logs = pickle.load(open(os.path.join(latest_checkpoint, "logs.pkl"), "rb"))
+        logs = pickle.load(open(os.path.join(models_dir, "latest_logs.pkl"), "rb"))
         
     else:
         iteration = 0
@@ -547,7 +549,8 @@ def save_checkpoint(scheduler, logs, output_dir="models/qd", n_feats=50,
                 logging.info(f"Saved policy {i+1}/{top_k} with portfolio value ${objective:.2f} to {model_path}")
         
         # Save the full archive as a pickle file for later analysis
-        archive_path = os.path.join(output_dir, "full_archive.pkl")
+        models_dir = Path(output_dir).parent
+        archive_path = os.path.join(models_dir, "latest_full_archive.pkl")
         with open(archive_path, "wb") as f:
             # pickle.dump(archive_data, f)
             pickle.dump(archive, f)
@@ -556,13 +559,13 @@ def save_checkpoint(scheduler, logs, output_dir="models/qd", n_feats=50,
         if save_emitters:
             # Save emitters (if applicable)
             for i, emitter in enumerate(scheduler.emitters):
-                emitter_path = os.path.join(output_dir, f"emitter_{i+1}.pkl")
+                emitter_path = os.path.join(models_dir, f"latest_emitter_{i+1}.pkl")
                 with open(emitter_path, "wb") as f:
                     pickle.dump(emitter, f)
                 logging.info(f"Saved emitter {i+1} to {emitter_path}")
         
         if save_logs:
-            logs_dir = os.path.join(output_dir, "logs.pkl")
+            logs_dir = os.path.join(models_dir, "latest_logs.pkl")
             with open(logs_dir, "wb") as f:
                 pickle.dump(logs, f)
     else:
@@ -1113,7 +1116,7 @@ def get_exp_dir():
         "logs_qd",
         f"{args.algorithm}_archive-{args.archive_size[0]}x{args.archive_size[1]}_"
         f"batch-{args.batch_size}_rollout-{args.rollout_steps}_"
-        f"eval-repeats-{args.eval_repeats}_hidden-{args.hidden_size}_"
+        f"eval-repeats-{args.eval_repeats}_hidden-{args.hidden_size}"
         f"_seed-{args.seed}"
     )
 
@@ -1138,6 +1141,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
     parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
     parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    parser.add_argument("--plot", action="store_true", help="Whether to just plot the (partial) archive animation (then quit) instead of running evolution.")
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level.upper())
@@ -1161,6 +1165,11 @@ if __name__ == "__main__":
     os.makedirs("logs_qd", exist_ok=True)
 
     exp_dir = get_exp_dir()
+    fig_dir = os.path.join(exp_dir, "figs")
+
+    if args.plot:
+        plot_archive_animation(save_dir=fig_dir)
+        exit(0)
     
     # Run QD training
     scheduler, logs = train_qd(
@@ -1182,7 +1191,6 @@ if __name__ == "__main__":
     
     # Generate and save final archive heatmap
     print("\n=== Generating Final Archive Visualization ===")
-    fig_dir = os.path.join(exp_dir, "figs")
     main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = plot_archive_heatmap(
         scheduler, args.num_iterations, logs, save_dir=fig_dir, is_final=True
     )
