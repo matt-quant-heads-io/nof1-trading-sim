@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 import uuid
 from datetime import datetime
+import random
 
 from nof1.simulation.orderbook import OrderBook
 from nof1.simulation.rewards import get_reward_function, RewardFunction
@@ -110,7 +111,9 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=seed)
             np.random.seed(seed)
 
-        self._step = 1
+        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode)
+        self._starting_step = self._step
+        
         self.position = 0
         self.current_state = np.append(self.states[self._step-1], [self.position])
         self.current_price = self.prices[self._step]
@@ -131,6 +134,7 @@ class TradingEnvironment(gym.Env):
         self.realized_pnl = 0.0
         self.reward_obj = None
         self.reward_obj = get_reward_function(self.config)
+        self.num_trades = [0]
         
         # Initial info
         info = {
@@ -292,10 +296,12 @@ class TradingEnvironment(gym.Env):
         info = {}
         reset_internals = False
         trade_pnl = 0.0
+        is_entry = False
 
         # If entry position (long or short)
         if action != 0 and self.position == 0:
             # Buy entry
+            is_entry = True
             self.entry_price = self.current_price
             self.entry_step = self._step
             self.entry_time = self.timestamps[self._step]
@@ -420,6 +426,7 @@ class TradingEnvironment(gym.Env):
 
         step_return = self.returns[-1] - self.returns[-2]
         info['step_return'] = step_return
+        
 
         if reset_internals:
             self.profit_target = None
@@ -435,6 +442,9 @@ class TradingEnvironment(gym.Env):
         
         # Debug logging
         self.logger.debug(f"Before action {action}: Position={self.position}, Capital={self.capital}")
+
+        if is_entry:
+            self.num_trades.append(self.long_trades+self.short_trades)
         
         info = {
             "step": self._step,
@@ -450,9 +460,9 @@ class TradingEnvironment(gym.Env):
             "long_trades": self.long_trades,
             "short_trades": self.short_trades,
             "action_mask": self._get_action_mask(),
-            "action_label": action_label
+            "action_label": action_label,
+            "num_trades_delta": self.num_trades[-1] - self.num_trades[-2] if len(self.num_trades) > 1 else self.num_trades[-1]
         }
-        
         return info
     
     def _calculate_reward(self, reward: int, info: Dict[str, Any]) -> float:
@@ -479,7 +489,7 @@ class TradingEnvironment(gym.Env):
             True if done, False otherwise
         """
         # Episode is done if we've reached max steps
-        if self._step >= self.max_steps:
+        if self._step >= self.max_steps and self._starting_step < self.max_steps:
             self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
