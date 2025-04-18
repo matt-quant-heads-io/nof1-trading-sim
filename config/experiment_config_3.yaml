@@ -6,251 +6,157 @@ system:
 
 data:
   historical:
-    data_path: "data/cleaned_macro_df_last_10000_mins.csv"
+    data_path: "data/cleaned_macro_df_with_BTC_last_10000_mins.csv"
     train_test_split: 0.99
-    price_column: close_CL
-    atr_column: atr_60m_CL
+    price_column: close_BTC
+    atr_column: atr_15m_BTC
     feature_columns:
-      - open_CL
-      - high_CL
-      - low_CL
-      - open_DX
-      - high_DX
-      - low_DX
-      - close_DX
-      - open_E6
-      - high_E6
-      - low_E6
-      - close_E6
-      - open_A6
-      - high_A6
-      - low_A6
-      - close_A6
-      - open_GC
-      - high_GC
-      - low_GC
-      - close_GC
-      - open_NG
-      - high_NG
-      - low_NG
-      - close_NG
+      - open_BTC
+      - high_BTC
+      - low_BTC
+      - close_BTC
+      - v_BTC
+      - open_ES
+      - high_ES
+      - low_ES
+      - close_ES
+      - v_ES
       - open_VX
       - high_VX
       - low_VX
       - close_VX
+      - v_VX
+      - open_CL
+      - high_CL
+      - low_CL
+      - close_CL
+      - v_CL
+      - open_GC
+      - high_GC
+      - low_GC
+      - close_GC
+      - v_GC
       - open_ZN
       - high_ZN
       - low_ZN
       - close_ZN
-      - open_DX_y
-      - high_DX_y
-      - low_DX_y
-      - close_DX_y
-      - open_B6
-      - high_B6
-      - low_B6
-      - close_B6
-      - rsi_NG
-      - adx_NG
-      - adx_pos_NG
-      - adx_neg_NG
-      - mass_index_NG
-      - macd_NG
-      - macd_diff_NG
-      - macd_signal_NG
-      - atr_NG
-      - bb_bbm_NG
-      - bb_bbh_NG
-      - bb_bbhi_NG
-      - bb_bbl_NG
-      - bb_bbli_NG
-      - rsi_VX
-      - adx_VX
-      - adx_pos_VX
-      - adx_neg_VX
-      - mass_index_VX
-      - macd_VX
-      - macd_diff_VX
-      - macd_signal_VX
-      - atr_VX
-      - bb_bbm_VX
-      - bb_bbh_VX
-      - bb_bbhi_VX
-      - bb_bbl_VX
-      - bb_bbli_VX
-      - rsi_CL
-      - adx_CL
-      - adx_pos_CL
-      - adx_neg_CL
-      - mass_index_CL
-      - macd_CL
-      - macd_diff_CL
-      - macd_signal_CL
-      - atr_CL
-      - bb_bbm_CL
-      - bb_bbh_CL
-      - bb_bbhi_CL
-      - bb_bbl_CL
-      - bb_bbli_CL
-      - rsi_E6
-      - adx_E6
-      - adx_pos_E6
-      - adx_neg_E6
-      - mass_index_E6
-      - macd_E6
-      - macd_diff_E6
-      - macd_signal_E6
-      - atr_E6
-      - bb_bbm_E6
-      - bb_bbh_E6
-      - bb_bbhi_E6
-      - bb_bbl_E6
-      - bb_bbli_E6
-      - rsi_A6
-      - adx_A6
-      - adx_pos_A6
-      - adx_neg_A6
-      - mass_index_A6
-      - macd_A6
-      - macd_diff_A6
-      - macd_signal_A6
-      - atr_A6
-      - bb_bbm_A6
-      - bb_bbh_A6
-      - bb_bbhi_A6
-      - bb_bbl_A6
-      - bb_bbli_A6
-      - rsi_GC
-      - adx_GC
-      - adx_pos_GC
-      - adx_neg_GC
-      - mass_index_GC
-      - macd_GC
-      - macd_diff_GC
-      - macd_signal_GC
-      - atr_GC
-      - bb_bbm_GC
-      - bb_bbh_GC
-      - bb_bbhi_GC
-      - bb_bbl_GC
-      - bb_bbli_GC
-      - rsi_ZN
-      - adx_ZN
-      - adx_pos_ZN
-      - adx_neg_ZN
-      - mass_index_ZN
-      - macd_ZN
-      - macd_diff_ZN
-      - macd_signal_ZN
-      - atr_ZN
-      - bb_bbm_ZN
-      - bb_bbh_ZN
-      - bb_bbhi_ZN
-      - bb_bbl_ZN
-      - bb_bbli_ZN
-      - rsi_DX
-      - adx_DX
-      - adx_pos_DX
-      - adx_neg_DX
-      - mass_index_DX
-      - macd_DX
-      - macd_diff_DX
-      - macd_signal_DX
-      - atr_DX
-      - bb_bbm_DX
-      - bb_bbh_DX
-      - bb_bbhi_DX
-      - bb_bbl_DX
-      - bb_bbli_DX
-      - rsi_B6
-      - adx_B6
-      - adx_pos_B6
-      - adx_neg_B6
-      - mass_index_B6
-      - macd_B6
-      - macd_diff_B6
-      - macd_signal_B6
-      - atr_B6
-      - bb_bbm_B6
-      - bb_bbh_B6
-      - bb_bbhi_B6
-      - bb_bbl_B6
-      - bb_bbli_B6
-      - tsi_NG
-      - ultimate_osc_NG
-      - williams_r_NG
-      - tsi_VX
-      - ultimate_osc_VX
-      - williams_r_VX
-      - tsi_CL
-      - ultimate_osc_CL
-      - williams_r_CL
-      - tsi_E6
-      - ultimate_osc_E6
-      - williams_r_E6
-      - tsi_A6
-      - ultimate_osc_A6
-      - williams_r_A6
-      - tsi_GC
-      - ultimate_osc_GC
-      - williams_r_GC
-      - tsi_ZN
-      - ultimate_osc_ZN
-      - williams_r_ZN
-      - tsi_DX
-      - ultimate_osc_DX
-      - williams_r_DX
-      - rsi_1m_NG
-      - tsi_1m_NG
-      - ultimate_osc_1m_NG
-      - williams_r_1m_NG
-      - adx_1m_NG
-      - adx_pos_1m_NG
-      - adx_neg_1m_NG
-      - mass_index_1m_NG
-      - macd_1m_NG
-      - macd_diff_1m_NG
-      - macd_signal_1m_NG
-      - atr_1m_NG
-      - bb_bbm_1m_NG
-      - bb_bbh_1m_NG
-      - bb_bbhi_1m_NG
-      - bb_bbl_1m_NG
-      - bb_bbli_1m_NG
-      - rsi_15m_NG
-      - tsi_15m_NG
-      - ultimate_osc_15m_NG
-      - williams_r_15m_NG
-      - adx_15m_NG
-      - adx_pos_15m_NG
-      - adx_neg_15m_NG
-      - mass_index_15m_NG
-      - macd_15m_NG
-      - macd_diff_15m_NG
-      - macd_signal_15m_NG
-      - atr_15m_NG
-      - bb_bbm_15m_NG
-      - bb_bbh_15m_NG
-      - bb_bbhi_15m_NG
-      - bb_bbl_15m_NG
-      - bb_bbli_15m_NG
-      - rsi_60m_NG
-      - tsi_60m_NG
-      - ultimate_osc_60m_NG
-      - williams_r_60m_NG
-      - adx_60m_NG
-      - adx_pos_60m_NG
-      - adx_neg_60m_NG
-      - mass_index_60m_NG
-      - macd_60m_NG
-      - macd_diff_60m_NG
-      - macd_signal_60m_NG
-      - atr_60m_NG
-      - bb_bbm_60m_NG
-      - bb_bbh_60m_NG
-      - bb_bbhi_60m_NG
-      - bb_bbl_60m_NG
-      - bb_bbli_60m_NG
+      - v_ZN
+      - open_DX
+      - high_DX
+      - low_DX
+      - close_DX
+      - v_DX
+      - sma_20_1mBTC
+      - sma_20_15mBTC
+      - sma_20_60mBTC
+      - rsi_1m_BTC
+      - tsi_1m_BTC
+      - ultimate_osc_1m_BTC
+      - williams_r_1m_BTC
+      - adx_1m_BTC
+      - adx_pos_1m_BTC
+      - adx_neg_1m_BTC
+      - mass_index_1m_BTC
+      - macd_1m_BTC
+      - macd_diff_1m_BTC
+      - macd_signal_1m_BTC
+      - atr_1m_BTC
+      - bb_bbm_1m_BTC
+      - bb_bbh_1m_BTC
+      - bb_bbhi_1m_BTC
+      - bb_bbl_1m_BTC
+      - bb_bbli_1m_BTC
+      - rsi_15m_BTC
+      - tsi_15m_BTC
+      - ultimate_osc_15m_BTC
+      - williams_r_15m_BTC
+      - adx_15m_BTC
+      - adx_pos_15m_BTC
+      - adx_neg_15m_BTC
+      - mass_index_15m_BTC
+      - macd_15m_BTC
+      - macd_diff_15m_BTC
+      - macd_signal_15m_BTC
+      - atr_15m_BTC
+      - bb_bbm_15m_BTC
+      - bb_bbh_15m_BTC
+      - bb_bbhi_15m_BTC
+      - bb_bbl_15m_BTC
+      - bb_bbli_15m_BTC
+      - rsi_60m_BTC
+      - tsi_60m_BTC
+      - ultimate_osc_60m_BTC
+      - williams_r_60m_BTC
+      - adx_60m_BTC
+      - adx_pos_60m_BTC
+      - adx_neg_60m_BTC
+      - mass_index_60m_BTC
+      - macd_60m_BTC
+      - macd_diff_60m_BTC
+      - macd_signal_60m_BTC
+      - atr_60m_BTC
+      - bb_bbm_60m_BTC
+      - bb_bbh_60m_BTC
+      - bb_bbhi_60m_BTC
+      - bb_bbl_60m_BTC
+      - bb_bbli_60m_BTC
+      - sma_20_1mES
+      - sma_20_15mES
+      - sma_20_60mES
+      - rsi_1m_ES
+      - tsi_1m_ES
+      - ultimate_osc_1m_ES
+      - williams_r_1m_ES
+      - adx_1m_ES
+      - adx_pos_1m_ES
+      - adx_neg_1m_ES
+      - mass_index_1m_ES
+      - macd_1m_ES
+      - macd_diff_1m_ES
+      - macd_signal_1m_ES
+      - atr_1m_ES
+      - bb_bbm_1m_ES
+      - bb_bbh_1m_ES
+      - bb_bbhi_1m_ES
+      - bb_bbl_1m_ES
+      - bb_bbli_1m_ES
+      - rsi_15m_ES
+      - tsi_15m_ES
+      - ultimate_osc_15m_ES
+      - williams_r_15m_ES
+      - adx_15m_ES
+      - adx_pos_15m_ES
+      - adx_neg_15m_ES
+      - mass_index_15m_ES
+      - macd_15m_ES
+      - macd_diff_15m_ES
+      - macd_signal_15m_ES
+      - atr_15m_ES
+      - bb_bbm_15m_ES
+      - bb_bbh_15m_ES
+      - bb_bbhi_15m_ES
+      - bb_bbl_15m_ES
+      - bb_bbli_15m_ES
+      - rsi_60m_ES
+      - tsi_60m_ES
+      - ultimate_osc_60m_ES
+      - williams_r_60m_ES
+      - adx_60m_ES
+      - adx_pos_60m_ES
+      - adx_neg_60m_ES
+      - mass_index_60m_ES
+      - macd_60m_ES
+      - macd_diff_60m_ES
+      - macd_signal_60m_ES
+      - atr_60m_ES
+      - bb_bbm_60m_ES
+      - bb_bbh_60m_ES
+      - bb_bbhi_60m_ES
+      - bb_bbl_60m_ES
+      - bb_bbli_60m_ES
+      - sma_20_1mVX
+      - sma_20_15mVX
+      - sma_20_60mVX
       - rsi_1m_VX
       - tsi_1m_VX
       - ultimate_osc_1m_VX
@@ -302,6 +208,9 @@ data:
       - bb_bbhi_60m_VX
       - bb_bbl_60m_VX
       - bb_bbli_60m_VX
+      - sma_20_1mCL
+      - sma_20_15mCL
+      - sma_20_60mCL
       - rsi_1m_CL
       - tsi_1m_CL
       - ultimate_osc_1m_CL
@@ -353,108 +262,9 @@ data:
       - bb_bbhi_60m_CL
       - bb_bbl_60m_CL
       - bb_bbli_60m_CL
-      - rsi_1m_E6
-      - tsi_1m_E6
-      - ultimate_osc_1m_E6
-      - williams_r_1m_E6
-      - adx_1m_E6
-      - adx_pos_1m_E6
-      - adx_neg_1m_E6
-      - mass_index_1m_E6
-      - macd_1m_E6
-      - macd_diff_1m_E6
-      - macd_signal_1m_E6
-      - atr_1m_E6
-      - bb_bbm_1m_E6
-      - bb_bbh_1m_E6
-      - bb_bbhi_1m_E6
-      - bb_bbl_1m_E6
-      - bb_bbli_1m_E6
-      - rsi_15m_E6
-      - tsi_15m_E6
-      - ultimate_osc_15m_E6
-      - williams_r_15m_E6
-      - adx_15m_E6
-      - adx_pos_15m_E6
-      - adx_neg_15m_E6
-      - mass_index_15m_E6
-      - macd_15m_E6
-      - macd_diff_15m_E6
-      - macd_signal_15m_E6
-      - atr_15m_E6
-      - bb_bbm_15m_E6
-      - bb_bbh_15m_E6
-      - bb_bbhi_15m_E6
-      - bb_bbl_15m_E6
-      - bb_bbli_15m_E6
-      - rsi_60m_E6
-      - tsi_60m_E6
-      - ultimate_osc_60m_E6
-      - williams_r_60m_E6
-      - adx_60m_E6
-      - adx_pos_60m_E6
-      - adx_neg_60m_E6
-      - mass_index_60m_E6
-      - macd_60m_E6
-      - macd_diff_60m_E6
-      - macd_signal_60m_E6
-      - atr_60m_E6
-      - bb_bbm_60m_E6
-      - bb_bbh_60m_E6
-      - bb_bbhi_60m_E6
-      - bb_bbl_60m_E6
-      - bb_bbli_60m_E6
-      - rsi_1m_A6
-      - tsi_1m_A6
-      - ultimate_osc_1m_A6
-      - williams_r_1m_A6
-      - adx_1m_A6
-      - adx_pos_1m_A6
-      - adx_neg_1m_A6
-      - mass_index_1m_A6
-      - macd_1m_A6
-      - macd_diff_1m_A6
-      - macd_signal_1m_A6
-      - atr_1m_A6
-      - bb_bbm_1m_A6
-      - bb_bbh_1m_A6
-      - bb_bbhi_1m_A6
-      - bb_bbl_1m_A6
-      - bb_bbli_1m_A6
-      - rsi_15m_A6
-      - tsi_15m_A6
-      - ultimate_osc_15m_A6
-      - williams_r_15m_A6
-      - adx_15m_A6
-      - adx_pos_15m_A6
-      - adx_neg_15m_A6
-      - mass_index_15m_A6
-      - macd_15m_A6
-      - macd_diff_15m_A6
-      - macd_signal_15m_A6
-      - atr_15m_A6
-      - bb_bbm_15m_A6
-      - bb_bbh_15m_A6
-      - bb_bbhi_15m_A6
-      - bb_bbl_15m_A6
-      - bb_bbli_15m_A6
-      - rsi_60m_A6
-      - tsi_60m_A6
-      - ultimate_osc_60m_A6
-      - williams_r_60m_A6
-      - adx_60m_A6
-      - adx_pos_60m_A6
-      - adx_neg_60m_A6
-      - mass_index_60m_A6
-      - macd_60m_A6
-      - macd_diff_60m_A6
-      - macd_signal_60m_A6
-      - atr_60m_A6
-      - bb_bbm_60m_A6
-      - bb_bbh_60m_A6
-      - bb_bbhi_60m_A6
-      - bb_bbl_60m_A6
-      - bb_bbli_60m_A6
+      - sma_20_1mGC
+      - sma_20_15mGC
+      - sma_20_60mGC
       - rsi_1m_GC
       - tsi_1m_GC
       - ultimate_osc_1m_GC
@@ -506,6 +316,9 @@ data:
       - bb_bbhi_60m_GC
       - bb_bbl_60m_GC
       - bb_bbli_60m_GC
+      - sma_20_1mZN
+      - sma_20_15mZN
+      - sma_20_60mZN
       - rsi_1m_ZN
       - tsi_1m_ZN
       - ultimate_osc_1m_ZN
@@ -557,6 +370,9 @@ data:
       - bb_bbhi_60m_ZN
       - bb_bbl_60m_ZN
       - bb_bbli_60m_ZN
+      - sma_20_1mDX
+      - sma_20_15mDX
+      - sma_20_60mDX
       - rsi_1m_DX
       - tsi_1m_DX
       - ultimate_osc_1m_DX
@@ -608,57 +424,6 @@ data:
       - bb_bbhi_60m_DX
       - bb_bbl_60m_DX
       - bb_bbli_60m_DX
-      - rsi_1m_B6
-      - tsi_1m_B6
-      - ultimate_osc_1m_B6
-      - williams_r_1m_B6
-      - adx_1m_B6
-      - adx_pos_1m_B6
-      - adx_neg_1m_B6
-      - mass_index_1m_B6
-      - macd_1m_B6
-      - macd_diff_1m_B6
-      - macd_signal_1m_B6
-      - atr_1m_B6
-      - bb_bbm_1m_B6
-      - bb_bbh_1m_B6
-      - bb_bbhi_1m_B6
-      - bb_bbl_1m_B6
-      - bb_bbli_1m_B6
-      - rsi_15m_B6
-      - tsi_15m_B6
-      - ultimate_osc_15m_B6
-      - williams_r_15m_B6
-      - adx_15m_B6
-      - adx_pos_15m_B6
-      - adx_neg_15m_B6
-      - mass_index_15m_B6
-      - macd_15m_B6
-      - macd_diff_15m_B6
-      - macd_signal_15m_B6
-      - atr_15m_B6
-      - bb_bbm_15m_B6
-      - bb_bbh_15m_B6
-      - bb_bbhi_15m_B6
-      - bb_bbl_15m_B6
-      - bb_bbli_15m_B6
-      - rsi_60m_B6
-      - tsi_60m_B6
-      - ultimate_osc_60m_B6
-      - williams_r_60m_B6
-      - adx_60m_B6
-      - adx_pos_60m_B6
-      - adx_neg_60m_B6
-      - mass_index_60m_B6
-      - macd_60m_B6
-      - macd_diff_60m_B6
-      - macd_signal_60m_B6
-      - atr_60m_B6
-      - bb_bbm_60m_B6
-      - bb_bbh_60m_B6
-      - bb_bbhi_60m_B6
-      - bb_bbl_60m_B6
-      - bb_bbli_60m_B6
     timestamp_column: "timestamp"
     normalize_features: true
 
@@ -671,9 +436,11 @@ simulation:
   slippage_model: "fixed"
   slippage_factor: 0.001
   position_size_fixed_dollar: 500.00
-  pt_atr_mult: 10
-  sl_atr_mult: 10
-  live_plot: true
+  allow_fractional_position_size: true
+  pt_atr_mult: 2
+  sl_atr_mult: 2
+  live_plot: false
+  random_start: false
 
 
 agents:
@@ -683,7 +450,7 @@ agents:
     type: "Box"
     low: -inf
     high: inf
-    n_feats: 649
+    n_feats: 414
     n_stack: 1
   action_space:
     type: "Discrete"
@@ -714,7 +481,7 @@ rl:
   create_eval_env: true
   verbose: 1
   device: "auto"
-  reward_type: sharpe_ratio
+  reward_type: sortino_ratio
 
 backtesting:
   metrics:

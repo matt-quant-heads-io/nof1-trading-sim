@@ -111,7 +111,7 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=seed)
             np.random.seed(seed)
 
-        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode)
+        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode) if self.config.simulation.random_start else 1
         self._starting_step = self._step
         
         self.position = 0
@@ -135,6 +135,7 @@ class TradingEnvironment(gym.Env):
         self.reward_obj = None
         self.reward_obj = get_reward_function(self.config)
         self.num_trades = [0]
+
         
         # Initial info
         info = {
@@ -323,7 +324,7 @@ class TradingEnvironment(gym.Env):
             if action == 1:
                 action_label = "LongEntry"
                 self.long_trades += 1
-                self.position = int(1000.0 / (self.sl_atr_mult*self.atr))
+                self.position = float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price + self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price - self.sl_atr_mult*self.atr
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct
@@ -333,7 +334,7 @@ class TradingEnvironment(gym.Env):
             else: # Sell entry
                 action_label = "ShortEntry"
                 self.short_trades += 1
-                self.position = -int((1000.0 / (self.sl_atr_mult*self.atr)))
+                self.position = -float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price - self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price + self.sl_atr_mult*self.atr
                 self.short_trades += 1
