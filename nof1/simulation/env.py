@@ -522,17 +522,18 @@ class TradingEnvironment(gym.Env):
             self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
             self.returns.append(self.capital)
             
-            episode_hash = uuid.uuid4().hex
+            
             df = pd.DataFrame.from_records(self.trade_blotter)
-            
-            df['entry_time'] = df['entry_time'].astype(str)
-            df['exit_time'] = df['exit_time'].astype(str)
-            df["episode_id"] = [episode_hash]*len(df)
-            df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
-            
-            df_infos = pd.DataFrame.from_records(self._infos)
-            df_infos["episode_id"] = [episode_hash]*len(df_infos)
-            df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            if len(df) > 0:
+                episode_hash = uuid.uuid4().hex
+                df['entry_time'] = df['entry_time'].astype(str)
+                df['exit_time'] = df['exit_time'].astype(str)
+                df["episode_id"] = [episode_hash]*len(df)
+                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                
+                df_infos = pd.DataFrame.from_records(self._infos)
+                df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
 
             return True
         
@@ -569,16 +570,18 @@ class TradingEnvironment(gym.Env):
                 self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
                 self.returns.append(self.capital)
                 
-                episode_hash = uuid.uuid4().hex
-                df = pd.DataFrame.from_records(self.trade_blotter)
-                df["episode_id"] = [episode_hash]*len(df)
-                df['entry_time'] = df['entry_time'].astype(str)
-                df['exit_time'] = df['exit_time'].astype(str)
-                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-                df_infos = pd.DataFrame.from_records(self._infos)
-                df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                df = pd.DataFrame.from_records(self.trade_blotter)
+                if len(df) > 0:
+                    episode_hash = uuid.uuid4().hex
+                    df['entry_time'] = df['entry_time'].astype(str)
+                    df['exit_time'] = df['exit_time'].astype(str)
+                    df["episode_id"] = [episode_hash]*len(df)
+                    df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                    
+                    df_infos = pd.DataFrame.from_records(self._infos)
+                    df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                    df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
                 
                 return True
 
@@ -614,17 +617,17 @@ class TradingEnvironment(gym.Env):
             self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
             self.returns.append(self.capital)
             
-            episode_hash = uuid.uuid4().hex
             df = pd.DataFrame.from_records(self.trade_blotter)
-            df["episode_id"] = [episode_hash]*len(df)
-            
-            df['entry_time'] = df['entry_time'].astype(str)
-            df['exit_time'] = df['exit_time'].astype(str)
-            df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
-            
-            df_infos = pd.DataFrame.from_records(self._infos)
-            df_infos["episode_id"] = [episode_hash]*len(df_infos)
-            df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            if len(df) > 0:
+                episode_hash = uuid.uuid4().hex
+                df['entry_time'] = df['entry_time'].astype(str)
+                df['exit_time'] = df['exit_time'].astype(str)
+                df["episode_id"] = [episode_hash]*len(df)
+                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                
+                df_infos = pd.DataFrame.from_records(self._infos)
+                df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         
