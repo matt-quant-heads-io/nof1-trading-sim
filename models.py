@@ -11,7 +11,7 @@ DEFAULT_CASH = 10_000.0
 class FrameStackPolicyNetwork(nn.Module):
     """Discrete action policy network for the stock trading environment with frame stacking."""
     
-    def __init__(self, n_feats=N_FEATURES, hidden_size=64, history_length=4, device="cpu"):
+    def __init__(self, n_feats=N_FEATURES, hidden_size=64, device="cpu"):
         """
         Initialize the policy network with frame stacking.
         
@@ -25,7 +25,6 @@ class FrameStackPolicyNetwork(nn.Module):
         
         self.device = device
         self.n_stocks = n_feats
-        self.history_length = history_length
         
         # Create a feed-forward network with stacked frames
         # Calculate input size:

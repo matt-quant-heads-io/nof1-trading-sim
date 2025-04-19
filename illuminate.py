@@ -38,8 +38,18 @@ os.environ["OMP_NUM_THREADS"] = "1"
 BUY = 1
 SELL = 2
 
+def init_env(args):
+    config_manager = ConfigManager(args.config)
+    config_manager.simulation.max_steps_per_episode = args.rollout_steps
+    config_manager.simulation.random_start = not args.non_random_start
+    data_reader = HistoricalDataReader(config_manager)
+    states, prices, atrs, timestamps = data_reader.preprocess_data()
+    env = TradingEnvironment(config_manager.config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, pct_eval=0.1)
+    return env
+
 # Function for evaluation with measure calculation
-def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100, seed=0, n_features=50):
+def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100, seed=0, n_features=50, eval_mode=False,
+                      random_start=True):
     """
     Optimized solution evaluation function for QD - uses batched evaluation.
     
@@ -66,7 +76,8 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     # Evaluate policy with batched execution
     with torch.no_grad():
         # Do a single rollout with batch_size = eval_repeats
-        total_rewards, all_states, all_actions, _ = env.rollout(policy, [eval_repeats], rollout_steps)
+        total_rewards, all_states, all_actions, _ = env.rollout(policy, [eval_repeats], rollout_steps,
+                                                                eval_mode=eval_mode, random_start=random_start)
             
     # Calculate final portfolio values
     final_states = all_states[-1]
@@ -134,16 +145,10 @@ class RayEvaluator:
         self.device = "cpu"
         
         # Create environment
-        config_manager = ConfigManager(args.config)
-        config = config_manager.config
-        data_reader = HistoricalDataReader(config_manager)
-        states, prices, atrs, timestamps = data_reader.preprocess_data()
-        # Create environment to get dimensions
-        self.env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
+        env = init_env(args)
         
         # Create policy network
         self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
-                                   history_length=history_length,
                                    device=self.device).to(self.device)
         
         # Put policy in evaluation mode
@@ -158,10 +163,43 @@ class RayEvaluator:
         np.random.seed(seed)
         
         # Evaluate the solution
-        return evaluate_solution(solution, self.env, self.policy, eval_repeats, rollout_steps, seed)
+        return evaluate_solution(solution, self.env, self.policy, eval_repeats, rollout_steps, seed,
+                                 random_start=not args.non_random_start)
+
+        
+def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_start, eval_mode, iteration, logs):
+    print(f"Reevaluating archive at iteration {iteration} with random_start={random_start} and eval_mode={eval_mode}...")
+    # Evaluate solutions serially
+    individuals = [i for i in archive]
+    solutions = [i['solution'] for i in individuals]
+    all_objs, all_measures = [], []
+    for i, solution in enumerate(solutions):
+        obj, measures = evaluate_solution(
+            solution,
+            env,
+            policy,
+            eval_repeats=eval_repeats,
+            rollout_steps=rollout_steps,
+            seed=seed + i,
+            eval_mode=eval_mode,
+            random_start=random_start,
+        )
+        all_objs.append(obj)
+        all_measures.append(measures)
+    all_objs = np.array(all_objs)
+    all_measures = np.array(all_measures)
+    # Put the solutions in the new archive
+    new_archive.add(
+        solution=np.array(solutions),
+        objective=all_objs,
+        measures=all_measures,
+    )
+    # Plot the new archive
+    plot_archive_heatmap(new_archive, iteration=iteration, save_dir=fig_dir, logs=logs, random_start=random_start, eval_mode=eval_mode)
 
 
-def train_qd(exp_dir,
+def train_qd(env,
+             exp_dir,
              archive_size=(10, 10), 
              algorithm="cmame",
              batch_size=30,
@@ -216,12 +254,6 @@ def train_qd(exp_dir,
         print(f"Created {len(evaluators)} Ray evaluators")
     
 
-    config_manager = ConfigManager(args.config)
-    config = config_manager.config
-    data_reader = HistoricalDataReader(config_manager)
-    states, prices, atrs, timestamps = data_reader.preprocess_data()
-    # Create environment to get dimensions
-    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
     assert isinstance(env.observation_space, gymnasium.spaces.Box), "Observation space must be Box"
     assert len(env.observation_space.shape) == 1, "Observation space must be 1D"
     n_features = env.observation_space.shape[0]
@@ -245,14 +277,17 @@ def train_qd(exp_dir,
         (0.0, 1.0),  # Trading activity (0 = all holds, 1 = all trades)
         (0.0, 1.0),  # Buy/Sell ratio (normalized)
     ]
-    
-    # Create the archive
-    archive = GridArchive(
-        solution_dim=param_count,
-        dims=archive_size,
-        ranges=behavior_bounds,
-        qd_score_offset=0,  # Portfolio value is our optimization objective
-    )
+
+    def init_archive():
+        # Create the archive
+        return GridArchive(
+            solution_dim=param_count,
+            dims=archive_size,
+            ranges=behavior_bounds,
+            qd_score_offset=0,  # Portfolio value is our optimization objective
+        )
+
+    archive = init_archive()
     
     # Create emitters
     if algorithm == "CMAME":
@@ -319,6 +354,18 @@ def train_qd(exp_dir,
         
     else:
         iteration = 0
+
+    if args.eval:
+        new_archive = init_archive()
+        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_start=False, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        new_archive = init_archive()
+        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_start=True, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        new_archive = init_archive()
+        reevaluate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_start=True, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        exit()
     
     # Main QD optimization loop
     while iteration < num_iterations:
@@ -365,7 +412,8 @@ def train_qd(exp_dir,
                     policy,
                     eval_repeats=eval_repeats,
                     rollout_steps=rollout_steps,
-                    seed=seed + i
+                    seed=seed + i,
+                    random_start=not args.non_random_start,
                 )
                 objectives.append(obj)
                 behavior_values.append(measures)
@@ -435,7 +483,7 @@ def train_qd(exp_dir,
             f"QD Iter: {iteration+1}/{num_iterations}, "
             f"QD Score: {qd_score:.2f}, "
             f"Coverage: {coverage*100:.1f}%, "
-            f"Max Portfolio: ${max_objective:.2f}, "
+            f"Max Objective: ${max_objective:.2f}, "
             f"Env steps/sec: {env_steps_per_second:.1f}{eta_str}"
         )
         pbar.update(1)
@@ -446,8 +494,8 @@ def train_qd(exp_dir,
         if (iteration + 1) % save_interval == 0 or iteration == num_iterations - 1:
             logging.info(f"\nGenerating visualizations at iteration {iteration+1}...")
             # Generate intermediate visualizations
-            fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = plot_archive_heatmap(
-                scheduler, iteration + 1, logs, save_dir=fig_dir, is_final=False
+            fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = generate_plots(
+                scheduler.archive, iteration + 1, logs, save_dir=fig_dir, is_final=False
             )
             logging.info(f"Saved archive visualization to {fig_path}")
             logging.info(f"Saved portfolio performance plot to {portfolio_path}")
@@ -461,6 +509,7 @@ def train_qd(exp_dir,
                 os.makedirs(checkpoint_dir, exist_ok=True)
                 save_checkpoint(
                     scheduler,
+                    env,
                     logs=logs,
                     output_dir=checkpoint_dir,
                     n_feats=n_features,
@@ -483,7 +532,7 @@ def train_qd(exp_dir,
     
     return scheduler, logs
 
-def save_checkpoint(scheduler, logs, output_dir="models/qd", n_feats=50,
+def save_checkpoint(scheduler, env, logs, output_dir, n_feats,
                        hidden_size=64,
                     #    history_length=4, 
                        device="cpu", top_k=5, save_emitters=True, save_logs=True):
@@ -501,14 +550,8 @@ def save_checkpoint(scheduler, logs, output_dir="models/qd", n_feats=50,
     """
     archive = scheduler.archive
 
-    config_manager = ConfigManager(args.config)
-    config = config_manager.config
-    data_reader = HistoricalDataReader(config_manager)
-    states, prices, atrs, timestamps = data_reader.preprocess_data()
-    # Create environment to get dimensions
-    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
     n_feats = env.observation_space.shape[0]
-    
+
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
@@ -581,8 +624,31 @@ def plot_archive_animation(save_dir="figs"):
         images.append(imageio.imread(filename))
     gif_path = os.path.join(save_dir, "archive_animation.gif")
     imageio.mimsave(gif_path, images, duration=0.5)
+    print(f"Saved archive animation to {gif_path}")
 
-def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=False):
+def plot_archive_heatmap(archive, iteration, save_dir, logs, random_start, eval_mode):
+    current_max_portfolio = logs["max_objective"][-1] if len(logs["max_objective"]) > 0 else 0
+    # Create figure with remaining metrics
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    
+    # Plot the archive heatmap
+    # Plot using pyribs built-in visualization
+    grid_archive_heatmap(
+        archive, 
+        ax=ax, 
+        cmap="viridis"
+    )
+    
+    # Enhance the heatmap appearance
+    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
+    ax.set_xlabel('Trading Activity (Buy+Sell %)')
+    ax.set_ylabel('Buy/Sell Ratio')
+    # Save figure
+    fig_path = os.path.join(save_dir, f"archive_iter_{iteration}_reeval_rand-start-{random_start}_eval-mode-{eval_mode}.png")
+    plt.savefig(fig_path)
+    plt.close()
+
+def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
     """
     Plot a heatmap of the archive using pyribs visualization tools.
     
@@ -593,7 +659,6 @@ def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=F
         save_dir: Directory to save the figure
         is_final: Whether this is the final visualization (for more detailed output)
     """
-    archive = scheduler.archive
     
     # Create output directory if it doesn't exist
     os.makedirs(save_dir, exist_ok=True)
@@ -611,16 +676,16 @@ def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=F
     # Create separate figure for portfolio performance
     plt.figure(figsize=(10, 6))
     if len(logs["max_objective"]) > 0:
-        plt.plot(logs["max_objective"], label="Max Portfolio", linewidth=2)
-        plt.plot(logs["archive_mean"], label="Mean Portfolio", linewidth=2)
+        plt.plot(logs["max_objective"], label="Max Objective", linewidth=2)
+        plt.plot(logs["archive_mean"], label="Mean Objective", linewidth=2)
         plt.axhline(y=10000, color='r', linestyle='--', label="Market Return")
         plt.xlabel("Iteration")
-        plt.ylabel("Portfolio Value ($)")
-        plt.title(f"Portfolio Performance (Iteration {iteration})")
+        plt.ylabel("Objective Value")
+        plt.title(f"Objective Performance (Iteration {iteration})")
         plt.legend()
         plt.grid(True)
     else:
-        plt.text(0.5, 0.5, "No Portfolio Data Yet", 
+        plt.text(0.5, 0.5, "No Objective Data Yet", 
                 horizontalalignment='center', verticalalignment='center',
                 transform=plt.gca().transAxes)
     plt.tight_layout()
@@ -719,7 +784,7 @@ def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=F
         )
         
         # Enhance the heatmap appearance
-        axes[0].set_title(f'Archive Grid (Iteration {iteration})\nMax Portfolio: ${current_max_portfolio:.2f}')
+        axes[0].set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
         axes[0].set_xlabel('Trading Activity (Buy+Sell %)')
         axes[0].set_ylabel('Buy/Sell Ratio')
         
@@ -885,7 +950,7 @@ def plot_archive_heatmap(scheduler, iteration, logs, save_dir="figs", is_final=F
     
     return fig_path, portfolio_path, portfolio_gain_path, iter_performance_path
 
-def validate_diverse_policies(scheduler, n_feats=50, hidden_size=64, 
+def validate_diverse_policies(scheduler, env, n_feats=50, hidden_size=64, 
                             #  history_length=4,
                             device="cpu", num_rollouts=20, 
                              rollout_steps=100, num_policies=5):
@@ -1034,12 +1099,6 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     Returns:
         float: Average portfolio percentage gain across all rollouts
     """
-    config_manager = ConfigManager(args.config)
-    config = config_manager.config
-    data_reader = HistoricalDataReader(config_manager)
-    states, prices, atrs, timestamps = data_reader.preprocess_data()
-    # Create environment to get dimensions
-    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
 
     # Initialize lists to store returns and final portfolio values
     all_returns = []
@@ -1117,6 +1176,7 @@ def get_exp_dir():
         f"{args.algorithm}_archive-{args.archive_size[0]}x{args.archive_size[1]}_"
         f"batch-{args.batch_size}_rollout-{args.rollout_steps}_"
         f"eval-repeats-{args.eval_repeats}_hidden-{args.hidden_size}"
+        f"_rand-start-{not args.non_random_start}" 
         f"_seed-{args.seed}"
     )
 
@@ -1131,6 +1191,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
     parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
     parser.add_argument("--rollout_steps", type=int, default=100, help="Number of steps in each rollout")
+    parser.add_argument("--non_random_start", action="store_true", help="Use the first `rollout_steps` rows from the dataframe only for evolution (for sanity checking, mostly).")
     parser.add_argument("--eval_repeats", type=int, default=16, help="Number of evaluations per solution to reduce variance")
     parser.add_argument("--hidden_size", type=int, default=64, help="Size of hidden layers in the policy network")
     parser.add_argument("--history_length", type=int, default=1, help="Number of historical frames to use")
@@ -1141,6 +1202,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
     parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
     parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    parser.add_argument("--eval", action="store_true", help="Whether to evaluate the trained policies")
     parser.add_argument("--plot", action="store_true", help="Whether to just plot the (partial) archive animation (then quit) instead of running evolution.")
     args = parser.parse_args()
 
@@ -1170,9 +1232,12 @@ if __name__ == "__main__":
     if args.plot:
         plot_archive_animation(save_dir=fig_dir)
         exit(0)
+
+    env = init_env(args)
     
     # Run QD training
     scheduler, logs = train_qd(
+        env=env,
         exp_dir=exp_dir,
         algorithm=args.algorithm,
         archive_size=tuple(args.archive_size),
@@ -1191,8 +1256,8 @@ if __name__ == "__main__":
     
     # Generate and save final archive heatmap
     print("\n=== Generating Final Archive Visualization ===")
-    main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = plot_archive_heatmap(
-        scheduler, args.num_iterations, logs, save_dir=fig_dir, is_final=True
+    main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = generate_plots(
+        scheduler.archive, args.num_iterations, logs, save_dir=fig_dir, is_final=True,
     )
     print(f"Final archive visualization saved to {main_fig_path}")
     print(f"Final portfolio performance plot saved to {portfolio_path}")
@@ -1200,32 +1265,27 @@ if __name__ == "__main__":
     print(f"Final per-iteration performance plot saved to {iter_performance_path}")
     print(f"Final detailed heatmap saved to {summary_fig_path}")
 
-    config_manager = ConfigManager(args.config)
-    config = config_manager.config
-    data_reader = HistoricalDataReader(config_manager)
-    states, prices, atrs, timestamps = data_reader.preprocess_data()
-    # Create environment to get dimensions
-    env = TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps)
     n_feats = env.observation_space.shape[0]
+    models_dir = os.path.join(exp_dir, "models")
     
     # Save the best policies from the archive
-    print("\n=== Saving Top Policies from Archive ===")
-    models_dir = os.path.join(exp_dir, "models")
-    save_checkpoint(
-        scheduler, 
-        logs=logs,
-        output_dir=models_dir,
-        n_feats=n_feats,
-        hidden_size=args.hidden_size,
-        # history_length=args.history_length,
-        device=device,
-        top_k=5
-    )
+    # print("\n=== Saving Top Policies from Archive ===")
+    # save_checkpoint(
+    #     scheduler, 
+    #     logs=logs,
+    #     output_dir=models_dir,
+    #     n_feats=n_feats,
+    #     hidden_size=args.hidden_size,
+    #     # history_length=args.history_length,
+    #     device=device,
+    #     top_k=5
+    # )
     
     # Validate diverse policies
     print("\n=== Validating Diverse Policies ===")
     validation_results = validate_diverse_policies(
         scheduler,
+        env,
         n_feats=n_feats,
         hidden_size=args.hidden_size,
         # history_length=args.history_length,

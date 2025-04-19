@@ -20,7 +20,8 @@ class TradingEnvironment(gym.Env):
     """
     metadata = {'render_modes': ['human']}
     
-    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None):
+    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None,
+                 pct_eval: Optional[float] = 0):
         # Initialize the Gymnasium environment
         super(TradingEnvironment, self).__init__()
         """
@@ -29,6 +30,7 @@ class TradingEnvironment(gym.Env):
         Args:
             config: Configuration dictionary
             data: Historical data as numpy array (if in historical mode)
+            pct_eval: Percentage of data to hold out for evaluation.
         """
         super(TradingEnvironment, self).__init__()
         
@@ -91,17 +93,19 @@ class TradingEnvironment(gym.Env):
         self.pt_atr_mult = self.config.simulation.pt_atr_mult
         self.sl_atr_mult = self.config.simulation.sl_atr_mult
         self.reward_obj = get_reward_function(config)
+        self.eval_start_idx = int(len(self.states) * (1 - pct_eval))
         
         # Initialize state
         self.reset()
     
-    def reset(self, *, seed=None, options=None):
+    def reset(self, *, seed=None, options=None, eval_mode=False, random_start=None):
         """
         Reset the environment to initial state.
         
         Args:
             seed: Optional seed for random number generator
             options: Additional options
+            eval: Whether to reset for evaluation (otherwise reset for training)
             
         Returns:
             Tuple of (initial observation, info dict)
@@ -111,7 +115,13 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=seed)
             np.random.seed(seed)
 
-        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode) if self.config.simulation.random_start else 1
+        random_start = self.config.simulation.random_start if random_start is None else random_start
+        if not random_start:
+            self._step = 1
+        elif not eval_mode:
+            self._step = random.randint(1, self.eval_start_idx - self.config.simulation.max_steps_per_episode)
+        else:
+            self._step = random.randint(self.eval_start_idx, len(self.states) - self.config.simulation.max_steps_per_episode)
         self._starting_step = self._step
         
         self.position = 0
@@ -122,7 +132,7 @@ class TradingEnvironment(gym.Env):
         self.profit_target = None
         self.stop_loss = None
         self.trade_blotter = []
-        self.capital = 10000
+        self.capital = 10_000
         self.returns = [self.capital]
         self.episode_rewards = []
         self.short_trade_wins = 0
@@ -522,7 +532,6 @@ class TradingEnvironment(gym.Env):
             self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
             self.returns.append(self.capital)
             
-            
             df = pd.DataFrame.from_records(self.trade_blotter)
             if len(df) > 0:
                 episode_hash = uuid.uuid4().hex
@@ -728,7 +737,7 @@ class TradingEnvironment(gym.Env):
         except (KeyError, TypeError):
             return default_value
 
-    def rollout(self, policy, batch_size=None, n_steps=100):
+    def rollout(self, policy, batch_size=None, n_steps=100, eval_mode=False, random_start=True):
         """
         Perform a rollout using the given policy.
         
@@ -744,7 +753,7 @@ class TradingEnvironment(gym.Env):
             all_rewards: List of rewards received
         """
         # Reset environment - this will initialize different environments for each batch element
-        obs, info = self.reset()
+        obs, info = self.reset(eval_mode=eval_mode, random_start=random_start)
         
         # If policy has a reset method (e.g., for RNNs), reset it with the correct batch size
         if hasattr(policy, 'reset'):
