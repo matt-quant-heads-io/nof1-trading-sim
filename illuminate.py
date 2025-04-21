@@ -516,7 +516,7 @@ def train_qd(env,
                     hidden_size=hidden_size,
                     # history_length=history_length,
                     device=device,
-                    top_k=3  # Save fewer policies at checkpoints
+                    top_k=0  # Save fewer policies at checkpoints
                 )
                 logging.info(f"Saved checkpoint policies to {checkpoint_dir}")
             logging.info("")  # Add empty line after checkpoint output
@@ -627,7 +627,9 @@ def plot_archive_animation(save_dir="figs"):
     print(f"Saved archive animation to {gif_path}")
 
 def plot_archive_heatmap(archive, iteration, save_dir, logs, random_start, eval_mode):
-    current_max_portfolio = logs["max_objective"][-1] if len(logs["max_objective"]) > 0 else 0
+    # current_max_objective = logs["max_objective"][-1] if len(logs["max_objective"]) > 0 else 0
+    max_objective = archive.data(["objective"])["objective"].max()
+
     # Create figure with remaining metrics
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     
@@ -640,7 +642,7 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_start, eval_
     )
     
     # Enhance the heatmap appearance
-    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
+    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:.2f}')
     ax.set_xlabel('Trading Activity (Buy+Sell %)')
     ax.set_ylabel('Buy/Sell Ratio')
     # Save figure

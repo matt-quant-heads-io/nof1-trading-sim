@@ -54,14 +54,14 @@ class SimplePnLReward(RewardFunction):
         super().__init__(config)
         
     def calculate_reward(self, 
-                         action: int, 
-                         position: float, 
-                         position_change: float,
-                         execution_price: float,
-                         current_price: float,
-                         unrealized_pnl: float,
+                        #  action: int, 
+                        #  position: float, 
+                        #  position_change: float,
+                        #  execution_price: float,
+                        #  current_price: float,
+                        #  unrealized_pnl: float,
                          realized_pnl: float,
-                         transaction_cost: float,
+                        #  transaction_cost: float,
                          info: Dict[str, Any]) -> float:
         """
         Calculate the reward as the realized P&L minus transaction costs.
