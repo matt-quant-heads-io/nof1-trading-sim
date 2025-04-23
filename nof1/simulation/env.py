@@ -119,9 +119,9 @@ class TradingEnvironment(gym.Env):
         if not random_start:
             self._step = 1
         elif not eval_mode:
-            self._step = random.randint(1, self.eval_start_idx - self.config.simulation.max_steps_per_episode)
+            self._step = np.random.randint(1, self.eval_start_idx - self.config.simulation.max_steps_per_episode + 1)
         else:
-            self._step = random.randint(self.eval_start_idx, len(self.states) - self.config.simulation.max_steps_per_episode)
+            self._step = np.random.randint(self.eval_start_idx, len(self.states) - self.config.simulation.max_steps_per_episode + 1)
         self._starting_step = self._step
         
         self.position = 0
@@ -533,16 +533,16 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             df = pd.DataFrame.from_records(self.trade_blotter)
-            if len(df) > 0:
-                episode_hash = uuid.uuid4().hex
-                df['entry_time'] = df['entry_time'].astype(str)
-                df['exit_time'] = df['exit_time'].astype(str)
-                df["episode_id"] = [episode_hash]*len(df)
-                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            # if len(df) > 0:
+            #     episode_hash = uuid.uuid4().hex
+            #     df['entry_time'] = df['entry_time'].astype(str)
+            #     df['exit_time'] = df['exit_time'].astype(str)
+            #     df["episode_id"] = [episode_hash]*len(df)
+            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-                df_infos = pd.DataFrame.from_records(self._infos)
-                df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            #     df_infos = pd.DataFrame.from_records(self._infos)
+            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
+            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
 
             return True
         
@@ -627,16 +627,16 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             df = pd.DataFrame.from_records(self.trade_blotter)
-            if len(df) > 0:
-                episode_hash = uuid.uuid4().hex
-                df['entry_time'] = df['entry_time'].astype(str)
-                df['exit_time'] = df['exit_time'].astype(str)
-                df["episode_id"] = [episode_hash]*len(df)
-                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            # if len(df) > 0:
+            #     episode_hash = uuid.uuid4().hex
+            #     df['entry_time'] = df['entry_time'].astype(str)
+            #     df['exit_time'] = df['exit_time'].astype(str)
+            #     df["episode_id"] = [episode_hash]*len(df)
+            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-                df_infos = pd.DataFrame.from_records(self._infos)
-                df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            #     df_infos = pd.DataFrame.from_records(self._infos)
+            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
+            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         

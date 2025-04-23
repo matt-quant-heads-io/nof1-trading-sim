@@ -120,9 +120,9 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     # Use mean over batch elements
     with torch.no_grad():
         eps = 1e-6
-        buy_sell_ratio = (buy_pct / (sell_pct + eps)).mean().item()
+        buy_sell_ratio = (buy_pct / (trade_activity + eps)).mean().item()
         # Normalize to [0, 1] range assuming reasonable bounds
-        buy_sell_ratio = min(max(buy_sell_ratio / 5.0, 0.0), 1.0)
+        # buy_sell_ratio = min(max(buy_sell_ratio / 5.0, 0.0), 1.0)
     
     # Define behavioral measures (2D for grid archive)
     measures = np.array([trade_activity, buy_sell_ratio])
@@ -168,23 +168,31 @@ class RayEvaluator:
                                  random_start=not args.non_random_start)
 
         
-def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_start, eval_mode, iteration, logs):
-    print(f"Reevaluating archive at iteration {iteration} with random_start={random_start} and eval_mode={eval_mode}...")
+def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_seed, eval_mode, iteration, logs):
+    print(f"Reevaluating archive at iteration {iteration} with random_seed={random_seed} and eval_mode={eval_mode}...")
     # Evaluate solutions serially
     individuals = [i for i in archive]
     solutions = [i['solution'] for i in individuals]
+    og_seeds = [i['seed'] for i in individuals]
+    new_seeds = []
     all_objs, all_measures = [], []
     for i, solution in enumerate(solutions):
+        if random_seed:
+            # Use a different seed for each solution
+            seed_i = seed + i
+        else:
+            seed_i = og_seeds[i]
         obj, measures = evaluate_solution(
             solution,
             env,
             policy,
             eval_repeats=eval_repeats,
             rollout_steps=rollout_steps,
-            seed=seed + i,
+            seed=seed_i,
             eval_mode=eval_mode,
-            random_start=random_start,
+            # random_start=random_start,
         )
+        new_seeds.append(seed_i)
         all_objs.append(obj)
         all_measures.append(measures)
     all_objs = np.array(all_objs)
@@ -194,9 +202,10 @@ def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_
         solution=np.array(solutions),
         objective=all_objs,
         measures=all_measures,
+        seed=np.array(new_seeds),
     )
     # Plot the new archive
-    plot_archive_heatmap(new_archive, iteration=iteration, save_dir=fig_dir, logs=logs, random_start=random_start, eval_mode=eval_mode)
+    plot_archive_heatmap(new_archive, iteration=iteration, save_dir=fig_dir, logs=logs, random_seed=random_seed, eval_mode=eval_mode)
 
 
 def train_qd(env,
@@ -287,6 +296,7 @@ def train_qd(env,
             dims=archive_size,
             ranges=behavior_bounds,
             qd_score_offset=0,  # Portfolio value is our optimization objective
+            extra_fields={"seed": ((), np.int32)},
         )
 
     archive = init_archive()
@@ -359,13 +369,13 @@ def train_qd(env,
 
     if args.eval:
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_start=False, logs=logs,
+        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
                            env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_start=True, logs=logs,
+        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=True, logs=logs,
                            env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_start=True, logs=logs,
+        reevaluate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
                            env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
         exit()
     
@@ -380,6 +390,9 @@ def train_qd(env,
         # Evaluate solutions (serially or with Ray)
         objectives = []
         behavior_values = []
+
+        # Different seed for each solution, different set of seeds for each generation
+        solution_seeds = [seed + i + iteration * batch_size for i in range(len(solutions))]
         
         if use_ray:
             # Launch evaluations in parallel using our pool of evaluators
@@ -396,7 +409,7 @@ def train_qd(env,
                     solution,
                     eval_repeats,
                     rollout_steps,
-                    seed + i  # Different seed for each solution
+                    solution_seeds[i], 
                 )
                 futures.append(future)
             
@@ -414,7 +427,7 @@ def train_qd(env,
                     policy,
                     eval_repeats=eval_repeats,
                     rollout_steps=rollout_steps,
-                    seed=seed + i,
+                    seed=solution_seeds[i],
                     random_start=not args.non_random_start,
                 )
                 objectives.append(obj)
@@ -426,7 +439,7 @@ def train_qd(env,
             best_objective = iteration_best
         
         # Update scheduler with results
-        scheduler.tell(objectives, behavior_values)
+        scheduler.tell(objectives, behavior_values, seed=solution_seeds)
         
         # Calculate QD metrics
         qd_score = archive.stats.qd_score
@@ -632,7 +645,7 @@ def plot_archive_animation(save_dir="figs"):
     imageio.mimsave(gif_path, images, duration=0.5)
     print(f"Saved archive animation to {gif_path}")
 
-def plot_archive_heatmap(archive, iteration, save_dir, logs, random_start, eval_mode):
+def plot_archive_heatmap(archive, iteration, save_dir, logs, random_seed, eval_mode):
     # current_max_objective = logs["max_objective"][-1] if len(logs["max_objective"]) > 0 else 0
     max_objective = archive.data(["objective"])["objective"].max()
 
@@ -648,11 +661,11 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_start, eval_
     )
     
     # Enhance the heatmap appearance
-    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:.2f}')
+    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:,.2f}')
     ax.set_xlabel('Trading Activity (Buy+Sell %)')
     ax.set_ylabel('Buy/Sell Ratio')
     # Save figure
-    fig_path = os.path.join(save_dir, f"archive_iter_{iteration}_reeval_rand-start-{random_start}_eval-mode-{eval_mode}.png")
+    fig_path = os.path.join(save_dir, f"archive_iter_{iteration}_reeval_rand-seed-{random_seed}_eval-mode-{eval_mode}.png")
     plt.savefig(fig_path)
     plt.close()
 
@@ -1210,7 +1223,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
     parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
     parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
-    parser.add_argument("--eval", action="store_true", help="Whether to evaluate the trained policies")
+    parser.add_argument("--eval", action="store_true", help="Whether to just evaluate the trained policies (then quit) instead of running evolution.")
     parser.add_argument("--plot", action="store_true", help="Whether to just plot the (partial) archive animation (then quit) instead of running evolution.")
     args = parser.parse_args()
 
