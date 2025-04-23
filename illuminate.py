@@ -31,13 +31,12 @@ from ribs.schedulers import Scheduler
 from ribs.visualize import grid_archive_heatmap
 
 from nof1 import TradingEnvironment
+from nof1.simulation.env import HOLD, BUY, SELL, CLOSE
 from nof1.data_ingestion.historical_data_reader import HistoricalDataReader
 from nof1.utils.config_manager import ConfigManager
 from models import FrameStackPolicyNetwork
 os.environ["OMP_NUM_THREADS"] = "1"
 
-BUY = 1
-SELL = 2
 
 def init_env(args):
     config_manager = ConfigManager(args.config)
@@ -45,11 +44,11 @@ def init_env(args):
     config_manager.simulation.random_start = not args.non_random_start
     data_reader = HistoricalDataReader(config_manager)
     states, prices, atrs, timestamps = data_reader.preprocess_data()
-    env = TradingEnvironment(config_manager.config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, pct_eval=0.1)
+    env = TradingEnvironment(config_manager.config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, pct_val=0.1)
     return env
 
 # Function for evaluation with measure calculation
-def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100, seed=0, n_features=50, eval_mode=False,
+def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16, rollout_steps=100, seed=0, n_features=50, eval_mode=False,
                       random_start=True):
     """
     Optimized solution evaluation function for QD - uses batched evaluation.
@@ -77,11 +76,11 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     # Evaluate policy with batched execution
     with torch.no_grad():
         # Do a single rollout with batch_size = eval_repeats
-        total_rewards, all_states, all_actions, _ = env.rollout(policy, [eval_repeats], rollout_steps,
+        mean_reward, all_states, all_actions, _ = env.rollout(policy, eval_repeats, rollout_steps,
                                                                 eval_mode=eval_mode, random_start=random_start)
             
     # Calculate final portfolio values
-    final_states = all_states[-1]
+    # final_states = all_states[-1]
     # final_cash = final_states["cash"]
     # final_positions = final_states["positions"]
     # final_prices = final_states["prices"]
@@ -102,15 +101,15 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     
     # Sum over time dimension to get total counts per evaluation
     # Shape: [batch_size, n_stocks]
-    buy_counts = buy_mask.sum(dim=0)
-    sell_counts = sell_mask.sum(dim=0)
+    buy_counts = buy_mask.sum(dim=1)
+    sell_counts = sell_mask.sum(dim=1)
     
     # Compute total actions
     total_actions = rollout_steps
     
     # Compute normalized buy and sell percentages
-    buy_pct = buy_counts / total_actions
-    sell_pct = sell_counts / total_actions
+    buy_pct = (buy_counts / total_actions).mean()
+    sell_pct = (sell_counts / total_actions).mean()
     
     # Trading activity - average across stocks and batch
     # Shape: [batch_size, n_stocks] -> [batch_size] -> scalar
@@ -129,7 +128,7 @@ def evaluate_solution(solution, env, policy, eval_repeats=16, rollout_steps=100,
     
     # Use mean portfolio value as the objective to maximize
     # objective = final_values.mean().item()
-    objective = total_rewards.sum().item()
+    objective = mean_reward
     
     return objective, measures
 
@@ -168,7 +167,7 @@ class RayEvaluator:
                                  random_start=not args.non_random_start)
 
         
-def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_seed, eval_mode, iteration, logs):
+def validate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_seed, eval_mode, iteration, logs, plot):
     print(f"Reevaluating archive at iteration {iteration} with random_seed={random_seed} and eval_mode={eval_mode}...")
     # Evaluate solutions serially
     individuals = [i for i in archive]
@@ -204,8 +203,46 @@ def reevaluate_archive(archive, new_archive, env, policy, eval_repeats, rollout_
         measures=all_measures,
         seed=np.array(new_seeds),
     )
-    # Plot the new archive
-    plot_archive_heatmap(new_archive, iteration=iteration, save_dir=fig_dir, logs=logs, random_seed=random_seed, eval_mode=eval_mode)
+    if plot:
+        # Plot the new archive
+        plot_archive_heatmap(new_archive, iteration=iteration, save_dir=fig_dir, logs=logs, random_seed=random_seed, eval_mode=eval_mode)
+    return new_archive
+
+
+def reevaluate_archive_inplace(archive, env, policy, eval_repeats, rollout_steps, seed):
+    # Evaluate solutions serially
+    individuals = [i for i in archive]
+    solutions = [i['solution'] for i in individuals]
+    og_seeds = [i['seed'] for i in individuals]
+    new_seeds = []
+    all_objs, all_measures = [], []
+    archive.clear()
+    for i, solution in enumerate(solutions):
+        # Use a different seed for each solution
+        seed_i = seed + i
+        obj, measures = evaluate_solution(
+            solution,
+            env,
+            policy,
+            eval_repeats=eval_repeats,
+            rollout_steps=rollout_steps,
+            seed=seed_i,
+            eval_mode=False,
+            # random_start=random_start,
+        )
+        new_seeds.append(seed_i)
+        all_objs.append(obj)
+        all_measures.append(measures)
+    all_objs = np.array(all_objs)
+    all_measures = np.array(all_measures)
+    # Put the solutions in the new archive
+    archive.add(
+        solution=np.array(solutions),
+        objective=all_objs,
+        measures=all_measures,
+        seed=np.array(new_seeds),
+    )
+    return archive
 
 
 def train_qd(env,
@@ -369,14 +406,17 @@ def train_qd(env,
 
     if args.eval:
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
-                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+                           plot=True)
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=True, logs=logs,
-                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=True, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+                           plot=True)
         new_archive = init_archive()
-        reevaluate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
-                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed)
+        validate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
+                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+                           plot=True)
         exit()
     
     # Main QD optimization loop
@@ -440,6 +480,12 @@ def train_qd(env,
         
         # Update scheduler with results
         scheduler.tell(objectives, behavior_values, seed=solution_seeds)
+
+        if args.reeval_interval > 0 and (iteration + 1) % args.reeval_interval == 0:
+            # Reevaluate the archive on new random seeds
+            reevaluate_archive_inplace(scheduler.archive, env=env, policy=policy,
+                                             eval_repeats=eval_repeats, rollout_steps=rollout_steps,
+                                             seed=seed)
         
         # Calculate QD metrics
         qd_score = archive.stats.qd_score
@@ -1132,7 +1178,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     for i in range(num_rollouts):
         # Perform rollout
         with torch.no_grad():
-            total_rewards, states, _, _ = env.rollout(policy, None, steps_per_rollout)
+            total_rewards, states, _, _ = env.rollout(policy, 1, steps_per_rollout)
         
         # Calculate initial and final portfolio value
         initial_state = states[0]
@@ -1198,6 +1244,7 @@ def get_exp_dir():
         f"batch-{args.batch_size}_rollout-{args.rollout_steps}_"
         f"eval-repeats-{args.eval_repeats}_hidden-{args.hidden_size}"
         f"_rand-start-{not args.non_random_start}" 
+        f"_reeval-interval-{args.reeval_interval}"
         f"_seed-{args.seed}"
     )
 
@@ -1221,6 +1268,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cpu, cuda, mps)")
     parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
+    parser.add_argument("--reeval_interval", type=int, default=-1, help="Interval at which to re-evaluate all solutions in the archive on new random seeds, and re-insert (set to -1 to disable).")
     parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
     parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
     parser.add_argument("--eval", action="store_true", help="Whether to just evaluate the trained policies (then quit) instead of running evolution.")
