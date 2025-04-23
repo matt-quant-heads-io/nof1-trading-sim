@@ -339,7 +339,7 @@ class TradingEnvironment(gym.Env):
             if action == BUY:
                 action_label = "LongEntry"
                 self.long_trades += 1
-                self.position = float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
+                self.position = float(self.config.simulation.position_size_fixed_dollar / self.entry_price) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / self.entry_price)
                 self.profit_target = self.entry_price + self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price - self.sl_atr_mult*self.atr
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct
@@ -350,7 +350,7 @@ class TradingEnvironment(gym.Env):
                 assert action == SELL
                 action_label = "ShortEntry"
                 self.short_trades += 1
-                self.position = -float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
+                self.position = -float(self.config.simulation.position_size_fixed_dollar / self.entry_price) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / self.entry_price)
                 self.profit_target = self.entry_price - self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price + self.sl_atr_mult*self.atr
                 self.short_trades += 1
