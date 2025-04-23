@@ -8,6 +8,7 @@ Quality Diversity (QD) optimization with pyribs.
 import glob
 import logging
 import os
+import re
 
 import gymnasium
 import imageio
@@ -145,7 +146,7 @@ class RayEvaluator:
         self.device = "cpu"
         
         # Create environment
-        env = init_env(args)
+        self.env = init_env(args)
         
         # Create policy network
         self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
@@ -238,6 +239,8 @@ def train_qd(env,
     # Set random seed for reproducibility
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+    n_features = env.observation_space.shape[0]
     
     # Initialize Ray if needed
     if use_ray:
@@ -256,7 +259,6 @@ def train_qd(env,
 
     assert isinstance(env.observation_space, gymnasium.spaces.Box), "Observation space must be Box"
     assert len(env.observation_space.shape) == 1, "Observation space must be 1D"
-    n_features = env.observation_space.shape[0]
     
     # Create a policy network template (reused for efficiency)
     policy = FrameStackPolicyNetwork(n_feats=n_features, hidden_size=hidden_size, 
@@ -481,10 +483,12 @@ def train_qd(env,
         # Update progress bar
         pbar.set_description(
             f"QD Iter: {iteration+1}/{num_iterations}, "
-            f"QD Score: {qd_score:.2f}, "
+            f"QD Score: {qd_score:,.2f}, "
             f"Coverage: {coverage*100:.1f}%, "
-            f"Max Objective: ${max_objective:.2f}, "
-            f"Env steps/sec: {env_steps_per_second:.1f}{eta_str}"
+            f"Max Objective: ${max_objective:,.2f}, "
+            f"Env steps/sec: {env_steps_per_second:,.1f}{eta_str}"
+            # format with commas to mark thousands
+            f"Env "
         )
         pbar.update(1)
         
@@ -616,6 +620,8 @@ def save_checkpoint(scheduler, env, logs, output_dir, n_feats,
 
 def plot_archive_animation(save_dir="figs"):
     iter_figs = glob.glob(os.path.join(save_dir, "archive_iter_*.png"))
+    # use regex to filter out only those figures ending with `iter_[0-9]*`
+    iter_figs = [f for f in iter_figs if re.search(r"archive_iter_[0-9]+\.png$", f)]
     # sort by iteration number
     iter_figs.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
     # Create an animated GIF from the images
