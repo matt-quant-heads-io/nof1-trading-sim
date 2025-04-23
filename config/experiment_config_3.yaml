@@ -434,11 +434,11 @@ simulation:
   initial_capital: 10000.0
   transaction_fee_pct: 0.0018
   slippage_model: "fixed"
-  slippage_factor: 0.001
-  position_size_fixed_dollar: 500.00
+  slippage_factor: 0.0001
+  position_size_fixed_dollar: 10000.00
   allow_fractional_position_size: true
-  pt_atr_mult: 2
-  sl_atr_mult: 2
+  pt_atr_mult: 200
+  sl_atr_mult: 200
   live_plot: false
   random_start: false
 
@@ -464,8 +464,8 @@ rl:
   algorithm: "PPO"
   policy_type: "MlpPolicy"
   learning_rate: 0.0003
-  n_steps: 256
-  batch_size: 256
+  n_steps: 1024
+  batch_size: 1024
   n_epochs: 1000
   gamma: 0.99
   gae_lambda: 0.95
@@ -480,8 +480,8 @@ rl:
   tensorboard_log: "./logs/"
   create_eval_env: true
   verbose: 1
-  device: "auto"
-  reward_type: sortino_ratio
+  reward_type: simple_pnl #sortino_ratio
+  device: cuda
 
 backtesting:
   metrics:
