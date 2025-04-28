@@ -1208,7 +1208,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
         # rollout_percent_gain = rollout_percent_gain * 100
         
         # Add to lists
-        all_returns.append(total_rewards.item())
+        all_returns.append(total_rewards)
         # initial_portfolio_values.append(initial_value.item())
         # final_portfolio_values.append(final_value.item())
         # percent_gains.append(rollout_percent_gain.item())
@@ -1297,6 +1297,8 @@ if __name__ == "__main__":
 
     exp_dir = get_exp_dir()
     fig_dir = os.path.join(exp_dir, "figs")
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
 
     if args.plot:
         plot_archive_animation(save_dir=fig_dir)
