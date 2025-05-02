@@ -169,9 +169,8 @@ class TradingEnvironment(gym.Env):
         # Get new observation
         self.current_state = np.append(self.states[self._step-1], [self.position]).astype(np.float32)
         self.current_regime = self.regimes[self._step-1]
-        self.current_price = self.prices[self._step]
+        self.current_price = self.prices[self._step] if self._step < len(self.prices) else self.prices[self._step-1] # if this returns self.prices[self._step-1] then episode is over anyways
         self.atr = self.atrs[self._step-1]
-        
         
         # NOTE: Calculate reward
         reward = self._calculate_reward(info['step_return'], info)
@@ -187,7 +186,6 @@ class TradingEnvironment(gym.Env):
 
         if self.live_plot:
             self._create_returns_plot()
-        
         
         # NOTE: 
         if terminated:
