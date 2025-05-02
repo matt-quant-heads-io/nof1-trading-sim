@@ -152,10 +152,10 @@ def main():
     if mode == "historical":
         # Load and preprocess data
         data_reader = HistoricalDataReader(config_manager)
-        states, prices, atrs, timestamps = data_reader.preprocess_data()
+        states, prices, atrs, timestamps, regimes = data_reader.preprocess_data()
         
         # Create environment
-        env = TradingEnvironment(config_manager.config, states = states, prices=prices, atrs=atrs, timestamps=timestamps)
+        env = TradingEnvironment(config_manager.config, states = states, prices=prices, atrs=atrs, timestamps=timestamps, regimes=regimes)
         
         # Create agent
         agent = RLAgent(config_manager.config, env)
@@ -238,11 +238,11 @@ def main():
        for train_test_index in range(1, 5):
              # Load and preprocess data
             data_reader = HistoricalDataReader(config_manager, split_num_for_dataset=train_test_index)
-            (train_states, train_prices, train_atrs, train_timestamps), (test_states, test_prices, test_atrs, test_timestamps) = data_reader.preprocess_data_for_cv()
+            (train_states, train_prices, train_atrs, train_timestamps, train_regimes), (test_states, test_prices, test_atrs, test_timestamps, test_regimes) = data_reader.preprocess_data_for_cv()
             
             # Create environment
             config_manager.config.simulation.max_steps_per_episode = original_max_steps
-            env = TradingEnvironment(config_manager.config, states = train_states, prices=train_prices, atrs=train_atrs, timestamps=train_timestamps)
+            env = TradingEnvironment(config_manager.config, states = train_states, prices=train_prices, atrs=train_atrs, timestamps=train_timestamps, regimes=train_regimes)
             
             # Create agent
             agent = RLAgent(config_manager.config, env)
