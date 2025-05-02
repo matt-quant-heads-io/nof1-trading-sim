@@ -256,7 +256,7 @@ def main():
             train_results = agent.train(args.timesteps)
 
             config_manager.config.simulation.max_steps_per_episode = len(test_states) - 1
-            eval_results = agent.eval(config_manager.config, test_states, test_prices, test_atrs, test_timestamps, 1)
+            eval_results = agent.eval(config_manager.config, test_states, test_prices, test_atrs, test_timestamps, 1, test_regimes)
             print(f"eval_results: {eval_results}")
 
             results.append(eval_results)
