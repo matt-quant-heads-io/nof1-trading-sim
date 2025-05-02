@@ -112,7 +112,7 @@ class BaseAgent:
             "min_return": np.min(self.episode_returns[-num_episodes:]),
         }
     
-    def eval(self, config, test_states, test_prices, test_atrs, test_timestamps, num_episodes) -> Dict[str, Any]:
+    def eval(self, config, test_states, test_prices, test_atrs, test_timestamps, num_episodes, regimes) -> Dict[str, Any]:
         """
         Train the agent for the specified number of episodes.
         
@@ -123,7 +123,7 @@ class BaseAgent:
             Dictionary with training summary
         """
         self.logger.info(f"Training {self.name} for {num_episodes} episodes")
-        self.eval_env = TradingEnvironment(config, states = test_states, prices=test_prices, atrs=test_atrs, timestamps=test_timestamps)
+        self.eval_env = TradingEnvironment(config, states = test_states, prices=test_prices, atrs=test_atrs, timestamps=test_timestamps, regimes=regimes)
         
         with torch.no_grad():
             for episode in range(num_episodes):
