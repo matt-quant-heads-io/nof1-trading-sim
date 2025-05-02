@@ -14,19 +14,13 @@ import random
 from nof1.simulation.orderbook import OrderBook
 from nof1.simulation.rewards import get_reward_function, RewardFunction
 
-HOLD = 0
-BUY = 1
-SELL = 2
-CLOSE = 3
-
 class TradingEnvironment(gym.Env):
     """
     Trading environment for RL agents.
     """
     metadata = {'render_modes': ['human']}
     
-    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None,
-                 pct_val: Optional[float] = 0):
+    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None):
         # Initialize the Gymnasium environment
         super(TradingEnvironment, self).__init__()
         """
@@ -35,7 +29,6 @@ class TradingEnvironment(gym.Env):
         Args:
             config: Configuration dictionary
             data: Historical data as numpy array (if in historical mode)
-            pct_eval: Percentage of data to hold out for evaluation.
         """
         super(TradingEnvironment, self).__init__()
         
@@ -62,7 +55,6 @@ class TradingEnvironment(gym.Env):
         
         # Setup feature columns
         self.feature_columns = self.config.data.historical.feature_columns
-        
         # Setup spaces
         obs_space_type = self.config.agents.observation_space.type 
         action_space_type = self.config.agents.action_space.type
@@ -98,19 +90,17 @@ class TradingEnvironment(gym.Env):
         self.pt_atr_mult = self.config.simulation.pt_atr_mult
         self.sl_atr_mult = self.config.simulation.sl_atr_mult
         self.reward_obj = get_reward_function(config)
-        self.eval_start_idx = int(len(self.states) * (1 - pct_val))
         
         # Initialize state
         self.reset()
     
-    def reset(self, *, seed=None, options=None, eval_mode=False, random_start=None):
+    def reset(self, *, seed=None, options=None):
         """
         Reset the environment to initial state.
         
         Args:
             seed: Optional seed for random number generator
             options: Additional options
-            eval: Whether to reset for evaluation (otherwise reset for training)
             
         Returns:
             Tuple of (initial observation, info dict)
@@ -120,13 +110,7 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=seed)
             np.random.seed(seed)
 
-        random_start = self.config.simulation.random_start if random_start is None else random_start
-        if not random_start:
-            self._step = 1
-        elif not eval_mode:
-            self._step = np.random.randint(1, self.eval_start_idx - self.config.simulation.max_steps_per_episode + 1)
-        else:
-            self._step = np.random.randint(self.eval_start_idx, len(self.states) - self.config.simulation.max_steps_per_episode + 1)
+        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode) if self.config.simulation.random_start else 1
         self._starting_step = self._step
         
         self.position = 0
@@ -137,7 +121,7 @@ class TradingEnvironment(gym.Env):
         self.profit_target = None
         self.stop_loss = None
         self.trade_blotter = []
-        self.capital = 10_000
+        self.capital = 10000
         self.returns = [self.capital]
         self.episode_rewards = []
         self.short_trade_wins = 0
@@ -266,10 +250,12 @@ class TradingEnvironment(gym.Env):
         # If at max position, can't buy more
         if self.position > 0:
             mask[1] = 0  # Disable buy action
+            mask[2] = 0
         
         # If at min position, can't sell more
         if self.position < 0:
             mask[2] = 0  # Disable sell action
+            mask[1] = 0
 
         if self.position == 0:
             mask[3] = 0
@@ -315,7 +301,7 @@ class TradingEnvironment(gym.Env):
         is_entry = False
 
         # If entry position (long or short)
-        if action != HOLD and self.position == 0:
+        if action != 0 and self.position == 0:
             # Buy entry
             is_entry = True
             self.entry_price = self.current_price
@@ -336,10 +322,10 @@ class TradingEnvironment(gym.Env):
                 import pdb; pdb.set_trace()
 
 
-            if action == BUY:
+            if action == 1:
                 action_label = "LongEntry"
                 self.long_trades += 1
-                self.position = float(self.config.simulation.position_size_fixed_dollar / self.entry_price) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / self.entry_price)
+                self.position = float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price + self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price - self.sl_atr_mult*self.atr
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct
@@ -347,10 +333,9 @@ class TradingEnvironment(gym.Env):
                 self.unrealized_pnl = 0.0 - commish - slippage
                 self.long_trades += 1
             else: # Sell entry
-                assert action == SELL
                 action_label = "ShortEntry"
                 self.short_trades += 1
-                self.position = -float(self.config.simulation.position_size_fixed_dollar / self.entry_price) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / self.entry_price)
+                self.position = -float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price - self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price + self.sl_atr_mult*self.atr
                 self.short_trades += 1
@@ -384,7 +369,7 @@ class TradingEnvironment(gym.Env):
                 self.unrealized_pnl = 0.0
                 self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 1, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_next_state_step": self.entry_state_step + 1, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             # NOTE: Check if agent closed the position
-            elif action == CLOSE:
+            elif action == 3:
                 action_label = "LongExit"
                 reset_internals = True
                 trade_pnl = (self.current_price - self.entry_price)*self.position
@@ -424,7 +409,7 @@ class TradingEnvironment(gym.Env):
                 # import pdb; pdb.set_trace()
                 self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             # NOTE: Check if agent closed the position
-            elif action == CLOSE:
+            elif action == 3:
                 action_label = "ShortExit"
                 reset_internals = True
                 trade_pnl = (self.current_price - self.entry_price)*self.position
@@ -538,17 +523,18 @@ class TradingEnvironment(gym.Env):
             self.capital = self.initial_capital + self.unrealized_pnl + self.realized_pnl
             self.returns.append(self.capital)
             
+            
             df = pd.DataFrame.from_records(self.trade_blotter)
-            # if len(df) > 0:
-            #     episode_hash = uuid.uuid4().hex
-            #     df['entry_time'] = df['entry_time'].astype(str)
-            #     df['exit_time'] = df['exit_time'].astype(str)
-            #     df["episode_id"] = [episode_hash]*len(df)
-            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            if len(df) > 0:
+                episode_hash = uuid.uuid4().hex
+                df['entry_time'] = df['entry_time'].astype(str)
+                df['exit_time'] = df['exit_time'].astype(str)
+                df["episode_id"] = [episode_hash]*len(df)
+                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-            #     df_infos = pd.DataFrame.from_records(self._infos)
-            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
-            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                df_infos = pd.DataFrame.from_records(self._infos)
+                df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
 
             return True
         
@@ -633,16 +619,16 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             df = pd.DataFrame.from_records(self.trade_blotter)
-            # if len(df) > 0:
-            #     episode_hash = uuid.uuid4().hex
-            #     df['entry_time'] = df['entry_time'].astype(str)
-            #     df['exit_time'] = df['exit_time'].astype(str)
-            #     df["episode_id"] = [episode_hash]*len(df)
-            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            if len(df) > 0:
+                episode_hash = uuid.uuid4().hex
+                df['entry_time'] = df['entry_time'].astype(str)
+                df['exit_time'] = df['exit_time'].astype(str)
+                df["episode_id"] = [episode_hash]*len(df)
+                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-            #     df_infos = pd.DataFrame.from_records(self._infos)
-            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
-            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                df_infos = pd.DataFrame.from_records(self._infos)
+                df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         
@@ -743,7 +729,7 @@ class TradingEnvironment(gym.Env):
         except (KeyError, TypeError):
             return default_value
 
-    def rollout(self, policy, eval_repeats=16, n_steps=100, eval_mode=False, random_start=True):
+    def rollout(self, policy, batch_size=None, n_steps=100):
         """
         Perform a rollout using the given policy.
         
@@ -758,43 +744,39 @@ class TradingEnvironment(gym.Env):
             all_actions: List of actions taken
             all_rewards: List of rewards received
         """
-
-        # Initialize lists to store trajectory
-        all_obs = [[]] * eval_repeats
-        all_actions = np.zeros((eval_repeats, n_steps), dtype=np.int32)
-        all_actions.fill(HOLD)
-        all_rewards = np.zeros((eval_repeats, n_steps), dtype=np.float32)
-        total_reward = 0
-
-        for ep_i in range(eval_repeats):
-            # Reset environment - this will initialize different environments for each batch element
-            obs, info = self.reset(eval_mode=eval_mode, random_start=random_start)
-         
-            # Accumulate total reward
-            ep_rew = 0
-            
-            # Perform rollout
-            for step_i in range(n_steps):
-                # Get action from policy
-                action = policy(obs)
-                all_actions[ep_i, step_i] = action
-                
-                # Take step in environment
-                next_obs, reward, terminated, truncated, info = self.step(action)
-                all_rewards[ep_i, step_i] = reward
-            
-                # Accumulate rewards
-                ep_rew += reward
-                
-                # Update state
-                obs = next_obs
-                all_obs[ep_i].append(obs)
-
-                if terminated or truncated:
-                    break
-
-            total_reward += ep_rew
-
-        mean_reward = total_reward / eval_repeats
+        # Reset environment - this will initialize different environments for each batch element
+        obs, info = self.reset()
         
-        return mean_reward, all_obs, all_actions, all_rewards
+        # If policy has a reset method (e.g., for RNNs), reset it with the correct batch size
+        if hasattr(policy, 'reset'):
+            if batch_size:
+                policy.reset(batch_size[0] if isinstance(batch_size, list) else batch_size)
+            else:
+                policy.reset()
+        
+        # Initialize lists to store trajectory
+        all_obs = [obs]
+        all_actions = []
+        all_rewards = []
+        
+        # Accumulate total reward
+        total_rewards = torch.zeros(batch_size if batch_size else ())
+        
+        # Perform rollout
+        for _ in range(n_steps):
+            # Get action from policy
+            action = policy(obs)
+            all_actions.append(action)
+            
+            # Take step in environment
+            next_obs, reward, terminated, truncated, info = self.step(action)
+            all_rewards.append(reward)
+            
+            # Accumulate rewards
+            total_rewards += reward
+            
+            # Update state
+            obs = next_obs
+            all_obs.append(obs)
+        
+        return total_rewards, all_obs, all_actions, all_rewards
