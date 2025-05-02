@@ -7,7 +7,7 @@ class HistoricalDataReader:
     """
     Reads and processes historical order book data from CSV files.
     """
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], split_num_for_dataset: int = None):
         """
         Initialize the historical data reader.
         
@@ -17,7 +17,7 @@ class HistoricalDataReader:
         self.logger = logging.getLogger(__name__)
         self.config = config
         
-        self.data_path = self.config.data.historical.data_path
+        self.data_path = self.config.data.historical.data_path if not split_num_for_dataset else f"{self.config.data.historical.data_path}/train_test_{split_num_for_dataset}.csv"
         self.feature_columns = self.config.data.historical.feature_columns 
         self.timestamp_column = self.config.data.historical.timestamp_column 
         self.normalize_features = self.config.data.historical.normalize_features 
@@ -106,6 +106,58 @@ class HistoricalDataReader:
         self.logger.info(f"Preprocessed data: {len(self.train_data)} training samples, {len(self.test_data)} testing samples")
         
         return features, prices, atrs, timestamps
+
+
+    def preprocess_data_for_cv(self) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Preprocess the loaded data for RL training.
+        
+        Returns:
+            Tuple of preprocessed data as numpy array and feature statistics
+        """
+        if self.data is None:
+            self.load_data()
+        
+        # Extract feature columns
+        features_df = self.data[self.feature_columns].copy()
+        
+        # Handle missing values
+        features_df = features_df.fillna(method='ffill').fillna(method='bfill')
+        
+        # Normalize features if required
+        
+        if self.normalize_features:
+            self.logger.info("Normalizing features")
+            for col in self.feature_columns:
+                # import pdb; pdb.set_trace()
+                mean = features_df[col].mean()
+                std = features_df[col].std()
+                features_df[col] = (features_df[col] - mean) / (std if std > 0 else 1)
+                self.feature_stats[col] = {'mean': mean, 'std': std}
+        
+        # Convert to numpy array
+        features = features_df.to_numpy()
+        prices = self.data[self.price_column]
+        atrs = self.data[self.atr_column]
+        timestamps = self.data[self.timestamp_column]
+        
+        # Split into train and test sets
+        split_idx = int(len(features) * self.train_test_split)
+        train_states = features[:split_idx]
+        test_states = features[split_idx:]
+
+        train_prices = prices[:split_idx]
+        test_prices = prices[split_idx:]
+
+        train_atrs = atrs[:split_idx]
+        test_atrs = atrs[split_idx:]
+
+        train_timestamps = timestamps[:split_idx]
+        test_timestamps = timestamps[split_idx:]
+        
+        return (train_states, train_prices, train_atrs, train_timestamps), (test_states, test_prices.reset_index(drop=True), test_atrs.reset_index(drop=True), test_timestamps.reset_index(drop=True))
+        
+        
     
     def get_train_data(self) -> np.ndarray:
         """
