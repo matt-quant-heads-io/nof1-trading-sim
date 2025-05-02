@@ -97,6 +97,7 @@ class HistoricalDataReader:
         prices = self.data[self.price_column]
         atrs = self.data[self.atr_column]
         timestamps = self.data[self.timestamp_column]
+        regimes = self.data['regime']
         
         # Split into train and test sets
         split_idx = int(len(features) * self.train_test_split)
@@ -105,7 +106,7 @@ class HistoricalDataReader:
         
         self.logger.info(f"Preprocessed data: {len(self.train_data)} training samples, {len(self.test_data)} testing samples")
         
-        return features, prices, atrs, timestamps
+        return features, prices, atrs, timestamps, regimes
 
 
     def preprocess_data_for_cv(self) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -140,6 +141,7 @@ class HistoricalDataReader:
         prices = self.data[self.price_column]
         atrs = self.data[self.atr_column]
         timestamps = self.data[self.timestamp_column]
+        regimes =  self.data['regime']
         
         # Split into train and test sets
         split_idx = int(len(features) * self.train_test_split)
@@ -154,10 +156,11 @@ class HistoricalDataReader:
 
         train_timestamps = timestamps[:split_idx]
         test_timestamps = timestamps[split_idx:]
+
+        train_regimes = regimes[:split_idx]
+        test_regimes = regimes[split_idx:]
         
-        return (train_states, train_prices, train_atrs, train_timestamps), (test_states, test_prices.reset_index(drop=True), test_atrs.reset_index(drop=True), test_timestamps.reset_index(drop=True))
-        
-        
+        return (train_states, train_prices, train_atrs, train_timestamps, train_regimes.reset_index(drop=True)), (test_states, test_prices.reset_index(drop=True), test_atrs.reset_index(drop=True), test_timestamps.reset_index(drop=True), test_regimes.reset_index(drop=True))
     
     def get_train_data(self) -> np.ndarray:
         """
