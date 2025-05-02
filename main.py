@@ -52,7 +52,7 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Trading Simulation System for RL Agents")
     parser.add_argument("--config", type=str, help="Path to configuration file", default="config/experiment_config_2.yaml")
-    parser.add_argument("--mode", type=str, choices=["historical", "paper_trading"], help="System mode")
+    parser.add_argument("--mode", type=str, choices=["historical", "paper_trading", "cross_val"], help="System mode")
     parser.add_argument("--data", type=str, help="Path to historical data file")
     parser.add_argument("--train", action="store_true", help="Train the agent")
     parser.add_argument("--backtest", action="store_true", help="Run backtest")
@@ -230,6 +230,44 @@ def main():
         finally:
             # Disconnect from the exchange
             live_connector.disconnect()
+
+    # Cross validation mode
+    if mode == "cross_val":
+       original_max_steps = config_manager.config.simulation.max_steps_per_episode
+       results = []
+       for train_test_index in range(1, 5):
+             # Load and preprocess data
+            data_reader = HistoricalDataReader(config_manager, split_num_for_dataset=train_test_index)
+            (train_states, train_prices, train_atrs, train_timestamps), (test_states, test_prices, test_atrs, test_timestamps) = data_reader.preprocess_data_for_cv()
+            
+            # Create environment
+            config_manager.config.simulation.max_steps_per_episode = original_max_steps
+            env = TradingEnvironment(config_manager.config, states = train_states, prices=train_prices, atrs=train_atrs, timestamps=train_timestamps)
+            
+            # Create agent
+            agent = RLAgent(config_manager.config, env)
+                
+            # Create directories for models, logs, and results
+            os.makedirs("models", exist_ok=True)
+            os.makedirs("logs", exist_ok=True)
+            os.makedirs("results", exist_ok=True)
+            
+            # Train the agent
+            train_results = agent.train(args.timesteps)
+
+            config_manager.config.simulation.max_steps_per_episode = len(test_states) - 1
+            eval_results = agent.eval(config_manager.config, test_states, test_prices, test_atrs, test_timestamps, 1)
+            print(f"eval_results: {eval_results}")
+
+            results.append(eval_results)
+            
+            # Plot and save training results
+            plot_training_results(eval_results, f"./results")
+            
+            # Save the trained model
+            model_path = f"models/agent_{mode}_{train_results['algorithm']}_{train_test_index}.zip"
+            agent.save(model_path)
+            logging.info(f"Saved trained model to {model_path}")
     
     else:
         logging.error(f"Unsupported mode: {mode}")
