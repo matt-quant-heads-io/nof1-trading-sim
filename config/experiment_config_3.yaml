@@ -6,7 +6,7 @@ system:
 
 data:
   historical:
-    data_path: "data/cleaned_macro_df_with_BTC_last_10000_mins.csv"
+    data_path: "data/neurips_dataset/train_test_2.csv"
     train_test_split: 0.99
     price_column: close_BTC
     atr_column: atr_15m_BTC
@@ -428,17 +428,17 @@ data:
     normalize_features: true
 
 simulation:
-  max_steps_per_episode: 1000
+  max_steps_per_episode: 512
   warmup_steps: 0
   tick_size: 0.01
   initial_capital: 10000.0
   transaction_fee_pct: 0.0018
   slippage_model: "fixed"
-  slippage_factor: 0.0001
-  position_size_fixed_dollar: 10000.00
+  slippage_factor: 0.001
+  position_size_fixed_dollar: 500.00
   allow_fractional_position_size: true
-  pt_atr_mult: 200
-  sl_atr_mult: 200
+  pt_atr_mult: 1
+  sl_atr_mult: 1
   live_plot: false
   random_start: false
 
@@ -464,8 +464,8 @@ rl:
   algorithm: "PPO"
   policy_type: "MlpPolicy"
   learning_rate: 0.0003
-  n_steps: 1024
-  batch_size: 1024
+  n_steps: 64
+  batch_size: 64
   n_epochs: 1000
   gamma: 0.99
   gae_lambda: 0.95
@@ -480,8 +480,8 @@ rl:
   tensorboard_log: "./logs/"
   create_eval_env: true
   verbose: 1
+  device: "auto"
   reward_type: simple_pnl #sortino_ratio
-  device: cuda
 
 backtesting:
   metrics:
