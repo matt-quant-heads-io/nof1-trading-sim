@@ -20,7 +20,7 @@ class TradingEnvironment(gym.Env):
     """
     metadata = {'render_modes': ['human']}
     
-    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None, regimes: Optional[np.ndarray] = None):
+    def __init__(self, config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None):
         # Initialize the Gymnasium environment
         super(TradingEnvironment, self).__init__()
         """
@@ -52,7 +52,6 @@ class TradingEnvironment(gym.Env):
         # Agent configuration
         self.max_position = self.config.agents.positions.max_position
         self.min_position = self.config.agents.positions.min_position
-        self.regimes = regimes
         
         # Setup feature columns
         self.feature_columns = self.config.data.historical.feature_columns
@@ -116,9 +115,7 @@ class TradingEnvironment(gym.Env):
         
         self.position = 0
         self.current_state = np.append(self.states[self._step-1], [self.position])
-        self.current_regime = self.regimes[self._step-1]
         self.current_price = self.prices[self._step]
-        self.current_regime = self.regimes[self._step-1]
         self.atr = self.atrs[self._step-1]
         self.entry_price = None
         self.profit_target = None
@@ -168,7 +165,6 @@ class TradingEnvironment(gym.Env):
         
         # Get new observation
         self.current_state = np.append(self.states[self._step-1], [self.position]).astype(np.float32)
-        self.current_regime = self.regimes[self._step-1]
         self.current_price = self.prices[self._step]
         self.atr = self.atrs[self._step-1]
         
@@ -467,8 +463,7 @@ class TradingEnvironment(gym.Env):
             "short_trades": self.short_trades,
             "action_mask": self._get_action_mask(),
             "action_label": action_label,
-            "num_trades_delta": self.num_trades[-1] - self.num_trades[-2] if len(self.num_trades) > 1 else self.num_trades[-1],
-            "regime": self.current_regime
+            "num_trades_delta": self.num_trades[-1] - self.num_trades[-2] if len(self.num_trades) > 1 else self.num_trades[-1]
         }
         return info
     
