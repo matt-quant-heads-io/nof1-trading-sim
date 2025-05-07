@@ -14,6 +14,12 @@ import random
 from nof1.simulation.orderbook import OrderBook
 from nof1.simulation.rewards import get_reward_function, RewardFunction
 
+
+HOLD = 0
+BUY = 1
+SELL = 2
+CLOSE = 3
+
 class TradingEnvironment(gym.Env):
     """
     Trading environment for RL agents.
@@ -76,7 +82,7 @@ class TradingEnvironment(gym.Env):
             raise ValueError(f"Unsupported observation space type: {obs_space_type}")
         
         if action_space_type == 'Discrete':
-            action_n = self.config.agents.action_space.n # 0: hold, 1: buy, 2: sell
+            action_n = self.config.agents.action_space.n
             self.action_space = spaces.Discrete(action_n)
         else:
             raise ValueError(f"Unsupported action space type: {action_space_type}")
@@ -95,7 +101,7 @@ class TradingEnvironment(gym.Env):
         # Initialize state
         self.reset()
     
-    def reset(self, *, seed=None, options=None):
+    def reset(self, *, seed=None, options=None, eval=False):
         """
         Reset the environment to initial state.
         
@@ -752,18 +758,16 @@ class TradingEnvironment(gym.Env):
         
         # If policy has a reset method (e.g., for RNNs), reset it with the correct batch size
         if hasattr(policy, 'reset'):
-            if batch_size:
-                policy.reset(batch_size[0] if isinstance(batch_size, list) else batch_size)
-            else:
-                policy.reset()
+            policy.reset()
         
         # Initialize lists to store trajectory
         all_obs = [obs]
         all_actions = []
         all_rewards = []
+        all_regimes = []
         
         # Accumulate total reward
-        total_rewards = torch.zeros(batch_size if batch_size else ())
+        total_rewards = 0
         
         # Perform rollout
         for _ in range(n_steps):
@@ -774,6 +778,7 @@ class TradingEnvironment(gym.Env):
             # Take step in environment
             next_obs, reward, terminated, truncated, info = self.step(action)
             all_rewards.append(reward)
+            all_regimes.append(info['regime'])
             
             # Accumulate rewards
             total_rewards += reward
@@ -782,4 +787,4 @@ class TradingEnvironment(gym.Env):
             obs = next_obs
             all_obs.append(obs)
         
-        return total_rewards, all_obs, all_actions, all_rewards
+        return total_rewards, all_obs, all_actions, all_rewards, all_regimes

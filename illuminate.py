@@ -28,7 +28,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from ribs.archives import GridArchive
 from ribs.emitters import EvolutionStrategyEmitter, GaussianEmitter
 from ribs.schedulers import Scheduler
-from ribs.visualize import grid_archive_heatmap
+from viz_utils import grid_archive_heatmap
 
 from nof1 import TradingEnvironment
 from nof1.simulation.env import HOLD, BUY, SELL, CLOSE
@@ -38,13 +38,20 @@ from models import FrameStackPolicyNetwork
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
-def init_env(args):
+def init_env(args, random_start=True, test=False):
     config_manager = ConfigManager(args.config)
     config_manager.simulation.max_steps_per_episode = args.rollout_steps
-    config_manager.simulation.random_start = not args.non_random_start
+    config_manager.simulation.random_start = random_start
     data_reader = HistoricalDataReader(config_manager)
-    states, prices, atrs, timestamps = data_reader.preprocess_data()
-    env = TradingEnvironment(config_manager.config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, pct_val=0.1)
+    (train_states, train_prices, train_atrs, train_timestamps, train_regimes), \
+        (test_states, test_prices, test_atrs, test_timestamps, test_regimes) = data_reader.preprocess_data_for_cv()
+
+    if not test:
+        states, prices, atrs, timestamps, regimes = train_states, train_prices, train_atrs, train_timestamps, train_regimes
+    else:
+        states, prices, atrs, timestamps, regimes = test_states, test_prices, test_atrs, test_timestamps, test_regimes
+
+    env = TradingEnvironment(config_manager.config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, regimes=regimes)
     return env
 
 # Function for evaluation with measure calculation
@@ -76,8 +83,7 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     # Evaluate policy with batched execution
     with torch.no_grad():
         # Do a single rollout with batch_size = eval_repeats
-        mean_reward, all_states, all_actions, _ = env.rollout(policy, eval_repeats, rollout_steps,
-                                                                eval_mode=eval_mode, random_start=random_start)
+        mean_reward, all_states, all_actions, all_rewards, all_regimes = env.rollout(policy, eval_repeats, rollout_steps)
             
     # Calculate final portfolio values
     # final_states = all_states[-1]
@@ -101,8 +107,8 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     
     # Sum over time dimension to get total counts per evaluation
     # Shape: [batch_size, n_stocks]
-    buy_counts = buy_mask.sum(dim=1)
-    sell_counts = sell_mask.sum(dim=1)
+    buy_counts = buy_mask.sum(dim=0)
+    sell_counts = sell_mask.sum(dim=0)
     
     # Compute total actions
     total_actions = rollout_steps
@@ -122,9 +128,16 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
         buy_sell_ratio = (buy_pct / (trade_activity + eps)).mean().item()
         # Normalize to [0, 1] range assuming reasonable bounds
         # buy_sell_ratio = min(max(buy_sell_ratio / 5.0, 0.0), 1.0)
+
+    all_regimes = np.array(all_regimes)
+    all_rewards = np.array(all_rewards)
+    regime_a_rew = np.where(all_regimes == -1, all_rewards, 0).sum()
+    regime_b_rew = np.where(all_regimes == 1, all_rewards, 0).sum()
+    relative_regime_perf = regime_a_rew / (regime_a_rew + regime_b_rew + 1e-6)
     
     # Define behavioral measures (2D for grid archive)
-    measures = np.array([trade_activity, buy_sell_ratio])
+    # measures = np.array([trade_activity, buy_sell_ratio, relative_regime_perf])
+    measures = np.array([trade_activity, buy_sell_ratio, relative_regime_perf])
     
     # Use mean portfolio value as the objective to maximize
     # objective = final_values.mean().item()
@@ -145,7 +158,7 @@ class RayEvaluator:
         self.device = "cpu"
         
         # Create environment
-        self.env = init_env(args)
+        self.env = init_env(args, random_start=not args.non_random_start, test=False)
         
         # Create policy network
         self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
@@ -247,7 +260,7 @@ def reevaluate_archive_inplace(archive, env, policy, eval_repeats, rollout_steps
 
 def train_qd(env,
              exp_dir,
-             archive_size=(10, 10), 
+             archive_size=(10, 10, 10), 
              algorithm="cmame",
              batch_size=30,
              num_iterations=100, 
@@ -324,6 +337,7 @@ def train_qd(env,
     behavior_bounds = [
         (0.0, 1.0),  # Trading activity (0 = all holds, 1 = all trades)
         (0.0, 1.0),  # Buy/Sell ratio (normalized)
+        (0.0, 1.0), # Relative regime performance (normalized)
     ]
 
     def init_archive():
@@ -405,9 +419,10 @@ def train_qd(env,
         iteration = 0
 
     if args.eval:
+        breakpoint()
         new_archive = init_archive()
         validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
-                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+                           env=fixed_start_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
                            plot=True)
         new_archive = init_archive()
         validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=True, logs=logs,
@@ -415,7 +430,7 @@ def train_qd(env,
                            plot=True)
         new_archive = init_archive()
         validate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
-                           env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+                           env=test_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
                            plot=True)
         exit()
     
@@ -844,23 +859,26 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
     # Plot the archive heatmap
     if len(archive) > 0:
         # Plot using pyribs built-in visualization
-        grid_archive_heatmap(
+        fig, axes = grid_archive_heatmap(
             archive, 
-            ax=axes[0], 
+            # ax=axes[0], 
             cmap="viridis"
         )
         
         # Enhance the heatmap appearance
-        axes[0].set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
-        axes[0].set_xlabel('Trading Activity (Buy+Sell %)')
-        axes[0].set_ylabel('Buy/Sell Ratio')
+        fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
+        axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
+        axes[0,0].set_ylabel('Buy/Sell Ratio')
+        fig.supxlabel('Relative Regime Performance')
         
         # Add grid for better readability
-        axes[0].grid(True, color='white', linestyle='-', linewidth=0.5, alpha=0.3)
+        for ax_i in axes.flatten():
+            ax_i.grid(True, color='white', linestyle='-', linewidth=0.5, alpha=0.3)
     else:
-        axes[0].text(0.5, 0.5, "Empty Archive", horizontalalignment='center', verticalalignment='center',
-                    transform=axes[0].transAxes)
-        axes[0].set_title('Archive Grid (Empty)')
+        raise Exception("How'd you manage an empty archive? Come on.")
+        # axes[0].text(0.5, 0.5, "Empty Archive", horizontalalignment='center', verticalalignment='center',
+        #             transform=axes[0].transAxes)
+        # axes[0].set_title('Archive Grid (Empty)')
     
     # Plot QD metrics in one subplot
     ax1 = axes[1]
@@ -1178,7 +1196,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     for i in range(num_rollouts):
         # Perform rollout
         with torch.no_grad():
-            total_rewards, states, _, _ = env.rollout(policy, 1, steps_per_rollout)
+            total_rewards, states, _, _ = train_env.rollout(policy, 1, steps_per_rollout)
         
         # Calculate initial and final portfolio value
         initial_state = states[0]
@@ -1255,7 +1273,7 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
     parser.add_argument("--algorithm", type=str, default="ME", help="Algorithm to use (me, cmame)", choices=["ME", "CMAME"])
-    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10], help="Size of the behavior grid (rows, cols)")
+    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10, 10], help="Size of the behavior grid (rows, cols)")
     parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
     parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
     parser.add_argument("--rollout_steps", type=int, default=100, help="Number of steps in each rollout")
@@ -1304,11 +1322,13 @@ if __name__ == "__main__":
         plot_archive_animation(save_dir=fig_dir)
         exit(0)
 
-    env = init_env(args)
+    fixed_start_env = init_env(args, random_start=False, test=False)
+    train_env = init_env(args, random_start=not args.non_random_start, test=False)
+    test_env = init_env(args, random_start=True, test=True)
     
     # Run QD training
     scheduler, logs = train_qd(
-        env=env,
+        env=train_env,
         exp_dir=exp_dir,
         algorithm=args.algorithm,
         archive_size=tuple(args.archive_size),
@@ -1336,7 +1356,7 @@ if __name__ == "__main__":
     print(f"Final per-iteration performance plot saved to {iter_performance_path}")
     print(f"Final detailed heatmap saved to {summary_fig_path}")
 
-    n_feats = env.observation_space.shape[0]
+    n_feats = train_env.observation_space.shape[0]
     models_dir = os.path.join(exp_dir, "models")
     
     # Save the best policies from the archive
@@ -1351,12 +1371,12 @@ if __name__ == "__main__":
     #     device=device,
     #     top_k=5
     # )
-    
+
     # Validate diverse policies
     print("\n=== Validating Diverse Policies ===")
     validation_results = validate_diverse_policies(
         scheduler,
-        env,
+        test_env,
         n_feats=n_feats,
         hidden_size=args.hidden_size,
         # history_length=args.history_length,
