@@ -19,7 +19,9 @@ def grid_archive_heatmap(archive,
                          cbar="auto",
                          cbar_kwargs=None,
                          rasterized=False,
-                         pcm_kwargs=None):
+                         pcm_kwargs=None,
+                         plot_curve=True,
+                        ):
     """Plots heatmap of a :class:`~ribs.archives.GridArchive` with 1D or 2D
     measure space.
 
@@ -245,8 +247,12 @@ def grid_archive_heatmap(archive,
         #                         squeeze=False)
 
 
-        fig = plt.figure(figsize=(5 * ncols + 8, 4 * nrows))  # extra width for right plot
-        gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols + [3], wspace=0)
+        if plot_curve:
+            fig = plt.figure(figsize=(5 * ncols + 8, 4 * nrows))  # extra width for right plot
+            gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols + [3], wspace=0)
+        else:
+            fig = plt.figure(figsize=(5 * ncols, 4 * nrows))  # extra width for right plot
+            gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols, wspace=0)
         
         # Subplots for each z-slice (left side)
         axs = np.empty((nrows, ncols), dtype=object)

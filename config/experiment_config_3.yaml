@@ -6,8 +6,8 @@ system:
 
 data:
   historical:
-    data_path: "data/neurips_dataset/train_test_2.csv"
-    train_test_split: 0.99
+    data_path: "data/neurips_dataset/train_test_1.csv"
+    train_test_split: 0.90
     price_column: close_BTC
     atr_column: atr_15m_BTC
     feature_columns:

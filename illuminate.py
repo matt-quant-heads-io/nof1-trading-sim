@@ -40,8 +40,10 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def init_env(args, random_start=True, test=False):
     config_manager = ConfigManager(args.config)
-    config_manager.simulation.max_steps_per_episode = args.rollout_steps
-    config_manager.simulation.random_start = random_start
+    # config_manager.config.simulation.max_steps_per_episode = args.rollout_steps
+    config_manager.set("simulation.max_steps_per_episode", args.rollout_steps)
+    # config_manager.config.simulation.random_start = random_start
+    config_manager.set("simulation.random_start", random_start)
     data_reader = HistoricalDataReader(config_manager)
     (train_states, train_prices, train_atrs, train_timestamps, train_regimes), \
         (test_states, test_prices, test_atrs, test_timestamps, test_regimes) = data_reader.preprocess_data_for_cv()
@@ -302,7 +304,7 @@ def train_qd(env,
     n_features = env.observation_space.shape[0]
     
     # Initialize Ray if needed
-    if use_ray:
+    if use_ray and not args.eval:
         if not ray.is_initialized():
             ray.init(num_cpus=num_cpus)
             print(f"Ray initialized with {ray.cluster_resources()['CPU']} CPUs")
@@ -419,7 +421,6 @@ def train_qd(env,
         iteration = 0
 
     if args.eval:
-        breakpoint()
         new_archive = init_archive()
         validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
                            env=fixed_start_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
@@ -711,20 +712,21 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_seed, eval_m
     max_objective = archive.data(["objective"])["objective"].max()
 
     # Create figure with remaining metrics
-    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    # fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     
     # Plot the archive heatmap
     # Plot using pyribs built-in visualization
-    grid_archive_heatmap(
+    fig, axes, ax_right = grid_archive_heatmap(
         archive, 
-        ax=ax, 
-        cmap="viridis"
+        cmap="viridis",
+        plot_curve=False,
     )
     
     # Enhance the heatmap appearance
-    ax.set_title(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:,.2f}')
-    ax.set_xlabel('Trading Activity (Buy+Sell %)')
-    ax.set_ylabel('Buy/Sell Ratio')
+    fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:.2f}')
+    axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
+    axes[0,0].set_ylabel('Buy/Sell Ratio')
+    fig.supxlabel('Relative Regime Performance')
     # Save figure
     fig_path = os.path.join(save_dir, f"archive_iter_{iteration}_reeval_rand-seed-{random_seed}_eval-mode-{eval_mode}.png")
     plt.savefig(fig_path)

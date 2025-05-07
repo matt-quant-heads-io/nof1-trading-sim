@@ -117,7 +117,7 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=seed)
             np.random.seed(seed)
 
-        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode) if self.config.simulation.random_start else 1
+        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1) if self.config.simulation.random_start else 1
         self._starting_step = self._step
         
         self.position = 0
@@ -500,7 +500,8 @@ class TradingEnvironment(gym.Env):
             True if done, False otherwise
         """
         # Episode is done if we've reached max steps
-        if self._step >= self.max_steps and self._starting_step < self.max_steps:
+        if self._step >= self.max_steps:
+        # if self._step >= self.max_steps and self._starting_step < self.max_steps:
             self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
@@ -533,17 +534,17 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             
-            df = pd.DataFrame.from_records(self.trade_blotter)
-            if len(df) > 0:
-                episode_hash = uuid.uuid4().hex
-                df['entry_time'] = df['entry_time'].astype(str)
-                df['exit_time'] = df['exit_time'].astype(str)
-                df["episode_id"] = [episode_hash]*len(df)
-                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            # df = pd.DataFrame.from_records(self.trade_blotter)
+            # if len(df) > 0:
+            #     episode_hash = uuid.uuid4().hex
+            #     df['entry_time'] = df['entry_time'].astype(str)
+            #     df['exit_time'] = df['exit_time'].astype(str)
+            #     df["episode_id"] = [episode_hash]*len(df)
+            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-                df_infos = pd.DataFrame.from_records(self._infos)
-                df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            #     df_infos = pd.DataFrame.from_records(self._infos)
+            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
+            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
 
             return True
         
