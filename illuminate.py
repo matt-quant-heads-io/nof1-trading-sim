@@ -859,7 +859,7 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
     # Plot the archive heatmap
     if len(archive) > 0:
         # Plot using pyribs built-in visualization
-        fig, axes = grid_archive_heatmap(
+        fig, axes, ax_right = grid_archive_heatmap(
             archive, 
             # ax=axes[0], 
             cmap="viridis"
@@ -873,7 +873,8 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
         
         # Add grid for better readability
         for ax_i in axes.flatten():
-            ax_i.grid(True, color='white', linestyle='-', linewidth=0.5, alpha=0.3)
+            if ax_i is not None:
+                ax_i.grid(True, color='white', linestyle='-', linewidth=0.5, alpha=0.3)
     else:
         raise Exception("How'd you manage an empty archive? Come on.")
         # axes[0].text(0.5, 0.5, "Empty Archive", horizontalalignment='center', verticalalignment='center',
@@ -881,32 +882,34 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
         # axes[0].set_title('Archive Grid (Empty)')
     
     # Plot QD metrics in one subplot
-    ax1 = axes[1]
+    # ax_right = axes[1]
     if len(logs["qd_score"]) > 0:
-        ax1.plot(logs["qd_score"], label="QD Score", color='blue')
-        ax1.set_xlabel("Iteration")
-        ax1.set_ylabel("QD Score", color='blue')
-        ax1.tick_params(axis='y', labelcolor='blue')
-        ax1.grid(True)
+        ax_right.plot(logs["qd_score"], label="QD Score", color='blue')
+        ax_right.set_xlabel("Iteration")
+        ax_right.set_ylabel("QD Score", color='blue')
+        ax_right.tick_params(axis='y', labelcolor='blue')
+        ax_right.grid(True)
         
         # Create second y-axis for coverage
-        ax2 = ax1.twinx()
+        ax2 = ax_right.twinx()
         ax2.plot(np.array(logs["coverage"]) * 100, label="Coverage", color='green')
         ax2.set_ylabel("Coverage (%)", color='green')
         ax2.tick_params(axis='y', labelcolor='green')
         
         # Add legend
-        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines1, labels1 = ax_right.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        ax_right.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
         
-        ax1.set_title(f"QD Metrics (QD Score: {current_qd_score:.2f}, Coverage: {current_coverage:.1f}%)")
+        ax_right.set_title(f"QD Metrics (QD Score: {current_qd_score:.2f}, Coverage: {current_coverage:.1f}%)")
     else:
-        ax1.text(0.5, 0.5, "No QD Data Yet", 
+        ax_right.text(0.5, 0.5, "No QD Data Yet", 
                 horizontalalignment='center', verticalalignment='center',
-                transform=ax1.transAxes)
+                transform=ax_right.transAxes)
     
     plt.tight_layout()
+    # fig.set_constrained_layout(True)
+
     
     # Save figure
     fig_path = os.path.join(save_dir, f"archive_iter_{iteration}.png")
@@ -914,7 +917,7 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
     plt.close()
     
     # For final visualization or checkpoints, create a detailed standalone heatmap
-    if is_final:
+    if False:
         # Create a better-looking heatmap with good proportions and improved visual design
         plt.figure(figsize=(10, 8))
         
@@ -946,9 +949,9 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
             vmin = 9950
             vmax = max(10050, np.nanmax(grid) + 10) if np.any(~np.isnan(grid)) else 10050
             
-            # Create the heatmap
-            heatmap = ax.imshow(masked_grid.T, origin='lower', cmap=cmap,
-                              aspect='equal', vmin=vmin, vmax=vmax, interpolation='nearest')
+            # # Create the heatmap
+            # heatmap = ax.imshow(masked_grid.T, origin='lower', cmap=cmap,
+            #                   aspect='equal', vmin=vmin, vmax=vmax, interpolation='nearest')
             
             # Add values to cells that have data
             for (i, j), val in np.ndenumerate(grid):
@@ -1086,22 +1089,22 @@ def validate_diverse_policies(scheduler, env, n_feats=50, hidden_size=64,
         # Find policies at the corners of the behavior space
         
         # Low trading, low buy/sell (mostly hold, but when trading, slight sell preference)
-        low_low_idx = np.argmin(np.sum((behavior_values - np.array([0.1, 0.1]))**2, axis=1))
+        low_low_idx = np.argmin(np.sum((behavior_values - np.array([0.1, 0.1, 0.5]))**2, axis=1))
         if low_low_idx != best_idx:
             policy_indices.append(low_low_idx)
         
         # Low trading, high buy/sell (rarely trades, but when does, strong buy preference)
-        low_high_idx = np.argmin(np.sum((behavior_values - np.array([0.1, 0.9]))**2, axis=1))
+        low_high_idx = np.argmin(np.sum((behavior_values - np.array([0.1, 0.9, 0.5]))**2, axis=1))
         if low_high_idx != best_idx and low_high_idx not in policy_indices:
             policy_indices.append(low_high_idx)
         
         # High trading, low buy/sell (trades a lot with sell preference)
-        high_low_idx = np.argmin(np.sum((behavior_values - np.array([0.9, 0.1]))**2, axis=1))
+        high_low_idx = np.argmin(np.sum((behavior_values - np.array([0.9, 0.1, 0.5]))**2, axis=1))
         if high_low_idx != best_idx and high_low_idx not in policy_indices:
             policy_indices.append(high_low_idx)
         
         # High trading, high buy/sell (trades a lot with buy preference)
-        high_high_idx = np.argmin(np.sum((behavior_values - np.array([0.9, 0.9]))**2, axis=1))
+        high_high_idx = np.argmin(np.sum((behavior_values - np.array([0.9, 0.9, 0.5]))**2, axis=1))
         if high_high_idx != best_idx and high_high_idx not in policy_indices:
             policy_indices.append(high_high_idx)
     
@@ -1196,7 +1199,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     for i in range(num_rollouts):
         # Perform rollout
         with torch.no_grad():
-            total_rewards, states, _, _ = train_env.rollout(policy, 1, steps_per_rollout)
+            total_rewards, states, _, _, _ = train_env.rollout(policy, 1, steps_per_rollout)
         
         # Calculate initial and final portfolio value
         initial_state = states[0]
@@ -1347,14 +1350,15 @@ if __name__ == "__main__":
     
     # Generate and save final archive heatmap
     print("\n=== Generating Final Archive Visualization ===")
-    main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = generate_plots(
+    # main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = generate_plots(
+    main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = generate_plots(
         scheduler.archive, args.num_iterations, logs, save_dir=fig_dir, is_final=True,
     )
     print(f"Final archive visualization saved to {main_fig_path}")
     print(f"Final portfolio performance plot saved to {portfolio_path}")
     print(f"Final portfolio gain plot saved to {portfolio_gain_path}")
     print(f"Final per-iteration performance plot saved to {iter_performance_path}")
-    print(f"Final detailed heatmap saved to {summary_fig_path}")
+    # print(f"Final detailed heatmap saved to {summary_fig_path}")
 
     n_feats = train_env.observation_space.shape[0]
     models_dir = os.path.join(exp_dir, "models")

@@ -1,4 +1,5 @@
 """Provides grid_archive_heatmap."""
+from matplotlib import gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -238,10 +239,25 @@ def grid_archive_heatmap(archive,
         # Prepare figure with subplots for each z-slice
         ncols = int(np.ceil(np.sqrt(z_dim)))
         nrows = int(np.ceil(z_dim / ncols))
-        fig, axs = plt.subplots(nrows,
-                                ncols,
-                                figsize=(4.7 * ncols, 4 * nrows),
-                                squeeze=False)
+        # fig, axs = plt.subplots(nrows,
+        #                         ncols,
+        #                         figsize=(4.7 * ncols, 4 * nrows),
+        #                         squeeze=False)
+
+
+        fig = plt.figure(figsize=(5 * ncols + 8, 4 * nrows))  # extra width for right plot
+        gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols + [3], wspace=0)
+        
+        # Subplots for each z-slice (left side)
+        axs = np.empty((nrows, ncols), dtype=object)
+        for z in range(z_dim):
+            row, col = divmod(z, ncols)
+            axs[row][col] = fig.add_subplot(gs[row, col])
+        
+        # Big plot on the right (you define what this is — e.g., average of slices or some projection)
+        ax_right = fig.add_subplot(gs[:, -1])
+        # Plot something meaningful on ax_right
+        # e.g., aggregated objective values across z-dim or a custom visualization
 
         for z in range(z_dim):
             row, col = divmod(z, ncols)
@@ -270,7 +286,8 @@ def grid_archive_heatmap(archive,
 
         # Hide unused subplots if any
         for i in range(z_dim, nrows * ncols):
-            axs.flat[i].axis("off")
+            if axs.flat[i] is not None:
+                axs.flat[i].axis("off")
 
         plt.tight_layout()
-        return fig, axs
+        return fig, axs, ax_right
