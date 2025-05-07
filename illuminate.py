@@ -726,7 +726,7 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_seed, eval_m
     fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:.2f}')
     axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
     axes[0,0].set_ylabel('Buy/Sell Ratio')
-    fig.supxlabel('Relative Regime Performance')
+    fig.supxlabel('Relative Regime Performance', ha='left')
     # Save figure
     fig_path = os.path.join(save_dir, f"archive_iter_{iteration}_reeval_rand-seed-{random_seed}_eval-mode-{eval_mode}.png")
     plt.savefig(fig_path)
@@ -871,7 +871,7 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
         fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
         axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
         axes[0,0].set_ylabel('Buy/Sell Ratio')
-        fig.supxlabel('Relative Regime Performance')
+        fig.supxlabel('Relative Regime Performance', ha='left')
         
         # Add grid for better readability
         for ax_i in axes.flatten():
@@ -909,6 +909,7 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
                 horizontalalignment='center', verticalalignment='center',
                 transform=ax_right.transAxes)
     
+    fig.subplots_adjust(left=0.05, right=0.95)
     plt.tight_layout()
     # fig.set_constrained_layout(True)
 

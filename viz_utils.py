@@ -248,11 +248,11 @@ def grid_archive_heatmap(archive,
 
 
         if plot_curve:
-            fig = plt.figure(figsize=(5 * ncols + 8, 4 * nrows))  # extra width for right plot
-            gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols + [3], wspace=0)
+            fig = plt.figure(figsize=(5 * ncols + 9, 4 * nrows))  # extra width for right plot
+            gs = gridspec.GridSpec(nrows, ncols + 2, width_ratios=[1]*ncols + [0.1] + [3], wspace=0.2)
         else:
-            fig = plt.figure(figsize=(5 * ncols, 4 * nrows))  # extra width for right plot
-            gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols, wspace=0)
+            fig = plt.figure(figsize=(4 * ncols + 1, 4 * nrows))  # extra width for right plot
+            gs = gridspec.GridSpec(nrows, ncols + 1, width_ratios=[1]*ncols + [0.1], wspace=0, hspace=0.2)
         
         # Subplots for each z-slice (left side)
         axs = np.empty((nrows, ncols), dtype=object)
@@ -261,7 +261,12 @@ def grid_archive_heatmap(archive,
             axs[row][col] = fig.add_subplot(gs[row, col])
         
         # Big plot on the right (you define what this is — e.g., average of slices or some projection)
-        ax_right = fig.add_subplot(gs[:, -1])
+        if plot_curve:
+            ax_right = fig.add_subplot(gs[:, -1])
+        else:
+            ax_right = None
+
+        cbar_ax = fig.add_subplot(gs[:, -2])
         # Plot something meaningful on ax_right
         # e.g., aggregated objective values across z-dim or a custom visualization
 
@@ -276,6 +281,9 @@ def grid_archive_heatmap(archive,
             # breakpoint()
             # ax.set_title(f"{archive.measure_names[2]} = {z_bounds[z]:.2f}")
             ax.set_aspect(aspect)
+            if z != 0:
+                ax.set_yticklabels([])
+                ax.set_xticklabels([])
 
             t = ax.pcolormesh(
                 x_bounds,
@@ -287,13 +295,17 @@ def grid_archive_heatmap(archive,
                 rasterized=rasterized,
                 **(pcm_kwargs or {})
             )
-            if cbar == "auto":
-                plt.colorbar(t, ax=ax, **(cbar_kwargs or {}))
+        if cbar == "auto":
+            pos = cbar_ax.get_position()
+            # Adjusting this position doesn't seem to work
+            cbar_ax.set_position([pos.x0, pos.y0-5, pos.width+1, pos.height])
+            fig.colorbar(t, cax=cbar_ax, **(cbar_kwargs or {}))
 
         # Hide unused subplots if any
         for i in range(z_dim, nrows * ncols):
             if axs.flat[i] is not None:
                 axs.flat[i].axis("off")
 
-        plt.tight_layout()
+        # plt.tight_layout(pad=1)
+
         return fig, axs, ax_right
