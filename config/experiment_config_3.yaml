@@ -7,9 +7,9 @@ system:
 data:
   historical:
     data_path: "data/neurips_dataset/train_test_1.csv"
-    train_test_split: 0.90
+    train_test_split: 0.99
     price_column: close_BTC
-    atr_column: atr_15m_BTC
+    atr_column: atr_60m_BTC
     feature_columns:
       - open_BTC
       - high_BTC
@@ -428,17 +428,17 @@ data:
     normalize_features: true
 
 simulation:
-  max_steps_per_episode: 512
+  max_steps_per_episode: 2000
   warmup_steps: 0
   tick_size: 0.01
-  initial_capital: 10000.0
-  transaction_fee_pct: 0.0018
+  initial_capital: 100000.0
+  transaction_fee_pct: 0.000018
   slippage_model: "fixed"
-  slippage_factor: 0.001
-  position_size_fixed_dollar: 500.00
+  slippage_factor: 0.0001
+  position_size_fixed_dollar: 100000.00
   allow_fractional_position_size: true
-  pt_atr_mult: 1
-  sl_atr_mult: 1
+  pt_atr_mult: 20
+  sl_atr_mult: 20
   live_plot: false
   random_start: false
 
@@ -464,8 +464,8 @@ rl:
   algorithm: "PPO"
   policy_type: "MlpPolicy"
   learning_rate: 0.0003
-  n_steps: 64
-  batch_size: 64
+  n_steps: 2499 #512
+  batch_size: 2499 #512
   n_epochs: 1000
   gamma: 0.99
   gae_lambda: 0.95
@@ -492,3 +492,19 @@ backtesting:
     - "win_rate"
   results_dir: "./results"
   plot_results: true
+
+risk:
+  max_steps_per_episode: 2048
+  warmup_steps: 0
+  tick_size: 0.01
+  initial_capital: 100000.0
+  transaction_fee_pct: 0.00018
+  slippage_model: "fixed"
+  slippage_factor: 0.00001
+  position_size_fixed_dollar: 100000.00
+  allow_fractional_position_size: true
+  pt_atr_mult: 20
+  sl_atr_mult: 20
+  atr: 50000.00
+  live_plot: false
+  random_start: false
