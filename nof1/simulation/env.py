@@ -315,7 +315,7 @@ class TradingEnvironment(gym.Env):
             self._step = len(self.states) - 1
 
         # If entry position (long or short)
-        if action != 0 and self.position == 0:
+        if action != HOLD and self.position == 0:
             # Buy entry
             is_entry = True
             self.entry_price = self.current_price
@@ -337,7 +337,7 @@ class TradingEnvironment(gym.Env):
                 import pdb; pdb.set_trace()
 
 
-            if action == 1:
+            if action == BUY:
                 action_label = "LongEntry"
                 self.long_trades += 1
                 self.position = float(min(self.initial_capital + self.unrealized_pnl + self.realized_pnl, self.config.risk.position_size_fixed_dollar) / self.entry_price) # float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
@@ -384,7 +384,7 @@ class TradingEnvironment(gym.Env):
                 self.unrealized_pnl = 0.0
                 self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 1, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_next_state_step": self.entry_state_step + 1, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             # NOTE: Check if agent closed the position
-            elif action == 3:
+            elif action == CLOSE:
                 action_label = "LongExit"
                 reset_internals = True
                 trade_pnl = (self.current_price - self.entry_price)*self.position
@@ -589,18 +589,17 @@ class TradingEnvironment(gym.Env):
                 self.returns.append(self.capital)
                 
                 
-                df = pd.DataFrame.from_records(self.trade_blotter)
-                if len(df) > 0:
-                    episode_hash = uuid.uuid4().hex
-                    df['entry_time'] = df['entry_time'].astype(str)
-                    df['exit_time'] = df['exit_time'].astype(str)
-                    df["episode_id"] = [episode_hash]*len(df)
-                    # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                # df = pd.DataFrame.from_records(self.trade_blotter)
+                # if len(df) > 0:
+                #     episode_hash = uuid.uuid4().hex
+                #     df['entry_time'] = df['entry_time'].astype(str)
+                #     df['exit_time'] = df['exit_time'].astype(str)
+                #     df["episode_id"] = [episode_hash]*len(df)
+                #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                     
-                    df_infos = pd.DataFrame.from_records(self._infos)
-                    df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                    # self.trade_stats = df_infos
-                    # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                #     df_infos = pd.DataFrame.from_records(self._infos)
+                #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
                 
                 return True
 
@@ -637,17 +636,16 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             df = pd.DataFrame.from_records(self.trade_blotter)
-            if len(df) > 0:
-                episode_hash = uuid.uuid4().hex
-                df['entry_time'] = df['entry_time'].astype(str)
-                df['exit_time'] = df['exit_time'].astype(str)
-                df["episode_id"] = [episode_hash]*len(df)
-                # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            # if len(df) > 0:
+            #     episode_hash = uuid.uuid4().hex
+            #     df['entry_time'] = df['entry_time'].astype(str)
+            #     df['exit_time'] = df['exit_time'].astype(str)
+            #     df["episode_id"] = [episode_hash]*len(df)
+            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-                df_infos = pd.DataFrame.from_records(self._infos)
-                df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                # self.trade_stats = df_infos
-                # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+            #     df_infos = pd.DataFrame.from_records(self._infos)
+            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
+            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         
@@ -775,6 +773,7 @@ class TradingEnvironment(gym.Env):
         all_actions = []
         all_rewards = []
         all_regimes = []
+        all_infos = []
         
         # Accumulate total reward
         total_rewards = 0
@@ -789,6 +788,7 @@ class TradingEnvironment(gym.Env):
             next_obs, reward, terminated, truncated, info = self.step(action)
             all_rewards.append(reward)
             all_regimes.append(info['regime'])
+            all_infos.append(info)
             
             # Accumulate rewards
             total_rewards += reward
@@ -797,4 +797,4 @@ class TradingEnvironment(gym.Env):
             obs = next_obs
             all_obs.append(obs)
         
-        return total_rewards, all_obs, all_actions, all_rewards, all_regimes
+        return total_rewards, all_obs, all_actions, all_rewards, all_regimes, all_infos

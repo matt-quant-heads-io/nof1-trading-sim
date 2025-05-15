@@ -85,7 +85,7 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     # Evaluate policy with batched execution
     with torch.no_grad():
         # Do a single rollout with batch_size = eval_repeats
-        mean_reward, all_states, all_actions, all_rewards, all_regimes = env.rollout(policy, eval_repeats, rollout_steps)
+        mean_reward, all_states, all_actions, all_rewards, all_regimes, all_infos = env.rollout(policy, eval_repeats, rollout_steps)
             
     # Calculate final portfolio values
     # final_states = all_states[-1]
@@ -104,20 +104,23 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     
     # Create masks for buy and sell actions in a single vectorized operation
     # These will be 1.0 where the condition is true, 0.0 elsewhere
-    buy_mask = (action_indices_tensor == BUY).float()
-    sell_mask = (action_indices_tensor == SELL).float()
+    # buy_mask = (action_indices_tensor == BUY).float()
+    # sell_mask = (action_indices_tensor == SELL).float()
     
     # Sum over time dimension to get total counts per evaluation
-    # Shape: [batch_size, n_stocks]
-    buy_counts = buy_mask.sum(dim=0)
-    sell_counts = sell_mask.sum(dim=0)
+    # buy_counts = buy_mask.sum(dim=0)
+    # sell_counts = sell_mask.sum(dim=0)
+    buy_counts = np.sum([info["action_label"] == "LongEntry" for info in all_infos], axis=0)
+    sell_counts = np.sum([info["action_label"] == "ShortEntry" for info in all_infos], axis=0)
     
     # Compute total actions
     total_actions = rollout_steps
+    # At most, the agent could buy/sell, then close at every other timestep
+    total_buysell_opportunities = total_actions / 2
     
     # Compute normalized buy and sell percentages
-    buy_pct = (buy_counts / total_actions).mean()
-    sell_pct = (sell_counts / total_actions).mean()
+    buy_pct = (buy_counts / total_buysell_opportunities).mean()
+    sell_pct = (sell_counts / total_buysell_opportunities).mean()
     
     # Trading activity - average across stocks and batch
     # Shape: [batch_size, n_stocks] -> [batch_size] -> scalar
@@ -430,9 +433,9 @@ def train_qd(env,
                            env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
                            plot=True)
         new_archive = init_archive()
-        validate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
-                           env=test_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
-                           plot=True)
+        # validate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
+        #                    env=test_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+        #                    plot=True)
         exit()
     
     # Main QD optimization loop
@@ -1308,7 +1311,7 @@ def main(args):
 
     fixed_start_env = init_env(args, random_start=False, test=False)
     train_env = init_env(args, random_start=not args.non_random_start, test=False)
-    test_env = init_env(args, random_start=True, test=True)
+    # test_env = init_env(args, random_start=True, test=True)
     
     # Run QD training
     scheduler, logs = train_qd(
@@ -1359,18 +1362,18 @@ def main(args):
 
     # Validate diverse policies
     print("\n=== Validating Diverse Policies ===")
-    validation_results = validate_diverse_policies(
-        scheduler,
-        test_env,
-        n_feats=n_feats,
-        hidden_size=args.hidden_size,
-        # history_length=args.history_length,
-        device=device,
-        num_rollouts=20,
-        rollout_steps=args.rollout_steps,
-        num_policies=5
-    )
-    plot_archive_animation(save_dir=fig_dir)
+    # validation_results = validate_diverse_policies(
+    #     scheduler,
+    #     test_env,
+    #     n_feats=n_feats,
+    #     hidden_size=args.hidden_size,
+    #     # history_length=args.history_length,
+    #     device=device,
+    #     num_rollouts=20,
+    #     rollout_steps=args.rollout_steps,
+    #     num_policies=5
+    # )
+    # plot_archive_animation(save_dir=fig_dir)
     
     # Save validation results
     # validation_path = "models/qd/validation_results.pkl"
