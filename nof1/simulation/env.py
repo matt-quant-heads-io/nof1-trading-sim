@@ -114,7 +114,7 @@ class TradingEnvironment(gym.Env):
         """
         # Set the seed if provided
         if seed is not None:
-            super().reset(seed=seed)
+            super().reset(seed=41)
             np.random.seed(seed)
 
         self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1) if self.config.simulation.random_start else 1
@@ -308,12 +308,19 @@ class TradingEnvironment(gym.Env):
         trade_pnl = 0.0
         is_entry = False
 
+        if self._step not in self.timestamps.index.values:
+            self._step = self.timestamps.index.values[-1]
+
+        if self._step > len(self.states) - 1:
+            self._step = len(self.states) - 1
+
         # If entry position (long or short)
         if action != 0 and self.position == 0:
             # Buy entry
             is_entry = True
             self.entry_price = self.current_price
             self.entry_step = self._step
+            # import pdb; pdb.set_trace()
             self.entry_time = self.timestamps[self._step]
             self.entry_state = self.current_state
             self.entry_state_step = self._step - 1
@@ -333,7 +340,7 @@ class TradingEnvironment(gym.Env):
             if action == 1:
                 action_label = "LongEntry"
                 self.long_trades += 1
-                self.position = float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
+                self.position = float(min(self.initial_capital + self.unrealized_pnl + self.realized_pnl, self.config.risk.position_size_fixed_dollar) / self.entry_price) # float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price + self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price - self.sl_atr_mult*self.atr
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct
@@ -343,7 +350,7 @@ class TradingEnvironment(gym.Env):
             else: # Sell entry
                 action_label = "ShortEntry"
                 self.short_trades += 1
-                self.position = -float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
+                self.position = -float(min(self.initial_capital + self.unrealized_pnl + self.realized_pnl, self.config.risk.position_size_fixed_dollar) / self.entry_price) #-float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else -int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
                 self.profit_target = self.entry_price - self.pt_atr_mult*self.atr
                 self.stop_loss = self.entry_price + self.sl_atr_mult*self.atr
                 self.short_trades += 1
@@ -588,17 +595,18 @@ class TradingEnvironment(gym.Env):
                     df['entry_time'] = df['entry_time'].astype(str)
                     df['exit_time'] = df['exit_time'].astype(str)
                     df["episode_id"] = [episode_hash]*len(df)
-                    df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                    # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                     
                     df_infos = pd.DataFrame.from_records(self._infos)
                     df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                    df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                    # self.trade_stats = df_infos
+                    # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
                 
                 return True
 
         # Episode is done if capital is depleted
         if self.capital <= 0:
-            self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
+            self.next_exit_state = np.append(self.states[self._step] if self._step < len(self.states) - 1 else self.states[self._step-1], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
                 trade_pnl = (self.profit_target - self.entry_price)*self.position
@@ -634,11 +642,12 @@ class TradingEnvironment(gym.Env):
                 df['entry_time'] = df['entry_time'].astype(str)
                 df['exit_time'] = df['exit_time'].astype(str)
                 df["episode_id"] = [episode_hash]*len(df)
-                df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
                 df_infos = pd.DataFrame.from_records(self._infos)
                 df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                # self.trade_stats = df_infos
+                # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         
@@ -694,7 +703,7 @@ class TradingEnvironment(gym.Env):
         pass
 
     @staticmethod
-    def create_vectorized_envs(config: Dict[str, Any], data: np.ndarray, num_envs: int = 1) -> gym.vector.VectorEnv:
+    def create_vectorized_envs(config: Dict[str, Any], states: Optional[np.ndarray] = None, prices: Optional[np.ndarray] = None, atrs: Optional[np.ndarray] = None, timestamps: Optional[np.ndarray] = None, regimes: Optional[np.ndarray] = None, num_envs: int = 1) -> gym.vector.VectorEnv:
         """
         Create a vectorized environment.
         
@@ -708,7 +717,7 @@ class TradingEnvironment(gym.Env):
         """
         # Define a function to create a single environment
         def make_env():
-            return TradingEnvironment(config, data)
+            return TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, regimes=regimes)
         
         # Create a vectorized environment
         envs = gym.vector.AsyncVectorEnv([lambda: make_env() for _ in range(num_envs)])
