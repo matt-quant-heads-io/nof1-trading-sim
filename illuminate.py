@@ -185,7 +185,7 @@ class RayEvaluator:
                                  random_start=not args.non_random_start)
 
         
-def validate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_seed, eval_mode, iteration, logs, plot):
+def validate_archive(archive, new_archive, env, policy, eval_repeats, rollout_steps, seed, random_seed, eval_mode, iteration, logs, plot, fig_dir):
     print(f"Reevaluating archive at iteration {iteration} with random_seed={random_seed} and eval_mode={eval_mode}...")
     # Evaluate solutions serially
     individuals = [i for i in archive]
@@ -263,7 +263,8 @@ def reevaluate_archive_inplace(archive, env, policy, eval_repeats, rollout_steps
     return archive
 
 
-def train_qd(env,
+def train_qd(args,
+             env,
              exp_dir,
              archive_size=(10, 10, 10), 
              algorithm="cmame",
@@ -425,13 +426,13 @@ def train_qd(env,
 
     if args.eval:
         new_archive = init_archive()
-        validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
-                           env=fixed_start_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
-                           plot=True)
-        new_archive = init_archive()
+        # validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=False, logs=logs,
+        #                    env=fixed_start_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
+        #                    plot=True)
+        # new_archive = init_archive()
         validate_archive(archive, new_archive, iteration=iteration, eval_mode=False, random_seed=True, logs=logs,
                            env=env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
-                           plot=True)
+                           plot=True, fig_dir=fig_dir)
         new_archive = init_archive()
         # validate_archive(archive, new_archive, eval_mode=True, iteration=iteration, random_seed=True, logs=logs,
         #                    env=test_env, policy=policy, eval_repeats=eval_repeats, rollout_steps=rollout_steps, seed=seed,
@@ -577,7 +578,7 @@ def train_qd(env,
             logging.info(f"\nGenerating visualizations at iteration {iteration+1}...")
             # Generate intermediate visualizations
             fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = generate_plots(
-                scheduler.archive, iteration + 1, logs, initial_capital=train_env.initial_capital, save_dir=fig_dir, is_final=False
+                scheduler.archive, iteration + 1, logs, initial_capital=env.initial_capital, save_dir=fig_dir, is_final=False
             )
             logging.info(f"Saved archive visualization to {fig_path}")
             logging.info(f"Saved portfolio performance plot to {portfolio_path}")
@@ -1166,7 +1167,7 @@ def validate_diverse_policies(scheduler, env, n_feats=50, hidden_size=64,
         vector_to_parameters(param_tensor, policy.parameters())
         
         # Validate the policy
-        avg_percent_gain = validate_policy(policy, num_rollouts=num_rollouts, 
+        avg_percent_gain = validate_policy(env, policy, num_rollouts=num_rollouts, 
                                          steps_per_rollout=rollout_steps, device=device)
         
         # Store results
@@ -1180,7 +1181,7 @@ def validate_diverse_policies(scheduler, env, n_feats=50, hidden_size=64,
 
 
 
-def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu"):
+def validate_policy(env, policy, num_rollouts=100, steps_per_rollout=100, device="cpu"):
     """
     Validate a trained policy by running multiple rollouts and reporting average return and portfolio performance.
     
@@ -1205,7 +1206,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     for i in range(num_rollouts):
         # Perform rollout
         with torch.no_grad():
-            total_rewards, states, _, _, _ = train_env.rollout(policy, 1, steps_per_rollout)
+            total_rewards, states, _, _, _ = env.rollout(policy, 1, steps_per_rollout)
         
         # Calculate initial and final portfolio value
         initial_state = states[0]
@@ -1315,6 +1316,7 @@ def main(args):
     
     # Run QD training
     scheduler, logs = train_qd(
+        args=args,
         env=train_env,
         exp_dir=exp_dir,
         algorithm=args.algorithm,
@@ -1377,10 +1379,10 @@ def main(args):
     
     # Save validation results
     # validation_path = "models/qd/validation_results.pkl"
-    validation_path = os.path.join(models_dir, "validation_results.pkl")
-    with open(validation_path, "wb") as f:
-        pickle.dump(validation_results, f)
-    print(f"Validation results saved to {validation_path}")
+    # validation_path = os.path.join(models_dir, "validation_results.pkl")
+    # with open(validation_path, "wb") as f:
+    #     pickle.dump(validation_results, f)
+    # print(f"Validation results saved to {validation_path}")
     
     print("\n=== QD Training Complete ===")
 
