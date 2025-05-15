@@ -117,7 +117,7 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=41)
             np.random.seed(seed)
 
-        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1) if self.config.simulation.random_start else 1
+        self._step = random.randint(1, max(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1)) if self.config.simulation.random_start else 1
         self._starting_step = self._step
         
         self.position = 0

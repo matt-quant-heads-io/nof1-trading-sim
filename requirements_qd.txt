@@ -1,6 +1,6 @@
-ray==2.44.1
+ray
 ribs
 shapely
 imageio
 tqdm
-debugpy==1.8.0
+debugpy

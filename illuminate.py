@@ -41,9 +41,9 @@ os.environ["OMP_NUM_THREADS"] = "1"
 def init_env(args, random_start=True, test=False):
     config_manager = ConfigManager(args.config)
     # config_manager.config.simulation.max_steps_per_episode = args.rollout_steps
-    config_manager.set("simulation.max_steps_per_episode", args.rollout_steps)
+    # config_manager.set("simulation.max_steps_per_episode", args.rollout_steps)
     # config_manager.config.simulation.random_start = random_start
-    config_manager.set("simulation.random_start", random_start)
+    # config_manager.set("simulation.random_start", random_start)
     data_reader = HistoricalDataReader(config_manager)
     (train_states, train_prices, train_atrs, train_timestamps, train_regimes), \
         (test_states, test_prices, test_atrs, test_timestamps, test_regimes) = data_reader.preprocess_data_for_cv()
@@ -574,7 +574,7 @@ def train_qd(env,
             logging.info(f"\nGenerating visualizations at iteration {iteration+1}...")
             # Generate intermediate visualizations
             fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = generate_plots(
-                scheduler.archive, iteration + 1, logs, save_dir=fig_dir, is_final=False
+                scheduler.archive, iteration + 1, logs, initial_capital=train_env.initial_capital, save_dir=fig_dir, is_final=False
             )
             logging.info(f"Saved archive visualization to {fig_path}")
             logging.info(f"Saved portfolio performance plot to {portfolio_path}")
@@ -732,7 +732,7 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_seed, eval_m
     plt.savefig(fig_path)
     plt.close()
 
-def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
+def generate_plots(archive, iteration, logs, initial_capital, save_dir="figs", is_final=False):
     """
     Plot a heatmap of the archive using pyribs visualization tools.
     
@@ -781,8 +781,8 @@ def generate_plots(archive, iteration, logs, save_dir="figs", is_final=False):
     plt.figure(figsize=(10, 6))
     if len(logs["max_objective"]) > 0:
         # Calculate percent gain relative to market (10000)
-        max_percent_gain = [(val/10000 - 1) * 100 for val in logs["max_objective"]]
-        mean_percent_gain = [(val/10000 - 1) * 100 for val in logs["archive_mean"]]
+        max_percent_gain = [(val/initial_capital - 1) * 100 for val in logs["max_objective"]]
+        mean_percent_gain = [(val/initial_capital - 1) * 100 for val in logs["archive_mean"]]
         
         plt.plot(max_percent_gain, 'b-', label="Max Portfolio % Gain", linewidth=2.5)
         plt.plot(mean_percent_gain, 'g-', label="Mean Portfolio % Gain", linewidth=2.5)
@@ -1261,7 +1261,7 @@ def validate_policy(policy, num_rollouts=100, steps_per_rollout=100, device="cpu
     # Return the average percent gain as our primary metric
     return avg_return
 
-def get_exp_dir():
+def get_exp_dir(args):
     return os.path.join(
         "logs_qd",
         f"{args.algorithm}_archive-{args.archive_size[0]}x{args.archive_size[1]}_"
@@ -1275,30 +1275,8 @@ def get_exp_dir():
 N_ACTIONS = 3
 N_FEATS = 50
 
-if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
-    parser.add_argument("--algorithm", type=str, default="ME", help="Algorithm to use (me, cmame)", choices=["ME", "CMAME"])
-    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10, 10], help="Size of the behavior grid (rows, cols)")
-    parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
-    parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
-    parser.add_argument("--rollout_steps", type=int, default=100, help="Number of steps in each rollout")
-    parser.add_argument("--non_random_start", action="store_true", help="Use the first `rollout_steps` rows from the dataframe only for evolution (for sanity checking, mostly).")
-    parser.add_argument("--eval_repeats", type=int, default=16, help="Number of evaluations per solution to reduce variance")
-    parser.add_argument("--hidden_size", type=int, default=64, help="Size of hidden layers in the policy network")
-    parser.add_argument("--history_length", type=int, default=1, help="Number of historical frames to use")
-    parser.add_argument("--use_ray", action="store_true", help="Whether to use Ray for distributed evaluation")
-    parser.add_argument("--num_cpus", type=int, default=None, help="Number of CPUs to use for Ray")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cpu, cuda, mps)")
-    parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
-    parser.add_argument("--reeval_interval", type=int, default=-1, help="Interval at which to re-evaluate all solutions in the archive on new random seeds, and re-insert (set to -1 to disable).")
-    parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
-    parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
-    parser.add_argument("--eval", action="store_true", help="Whether to just evaluate the trained policies (then quit) instead of running evolution.")
-    parser.add_argument("--plot", action="store_true", help="Whether to just plot the (partial) archive animation (then quit) instead of running evolution.")
-    args = parser.parse_args()
 
+def main(args):
     logging.basicConfig(level=args.log_level.upper())
     
     print("=== Training Stonks Environment with Quality Diversity (QD) Optimization ===")
@@ -1319,7 +1297,7 @@ if __name__ == "__main__":
     # os.makedirs("figs", exist_ok=True)
     os.makedirs("logs_qd", exist_ok=True)
 
-    exp_dir = get_exp_dir()
+    exp_dir = get_exp_dir(args)
     fig_dir = os.path.join(exp_dir, "figs")
     if not os.path.exists(fig_dir):
         os.makedirs(fig_dir)
@@ -1355,7 +1333,7 @@ if __name__ == "__main__":
     print("\n=== Generating Final Archive Visualization ===")
     # main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path, summary_fig_path = generate_plots(
     main_fig_path, portfolio_path, portfolio_gain_path, iter_performance_path = generate_plots(
-        scheduler.archive, args.num_iterations, logs, save_dir=fig_dir, is_final=True,
+        scheduler.archive, args.num_iterations, logs, initial_capital=train_env.initial_capital, save_dir=fig_dir, is_final=True,
     )
     print(f"Final archive visualization saved to {main_fig_path}")
     print(f"Final portfolio performance plot saved to {portfolio_path}")
@@ -1402,3 +1380,34 @@ if __name__ == "__main__":
     print(f"Validation results saved to {validation_path}")
     
     print("\n=== QD Training Complete ===")
+
+    
+def get_arg_parser():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
+    parser.add_argument("--algorithm", type=str, default="ME", help="Algorithm to use (me, cmame)", choices=["ME", "CMAME"])
+    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10, 10], help="Size of the behavior grid (rows, cols)")
+    parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
+    parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
+    parser.add_argument("--rollout_steps", type=int, default=2000, help="Number of steps in each rollout")
+    parser.add_argument("--non_random_start", action="store_true", help="Use the first `rollout_steps` rows from the dataframe only for evolution (for sanity checking, mostly).")
+    parser.add_argument("--eval_repeats", type=int, default=16, help="Number of evaluations per solution to reduce variance")
+    parser.add_argument("--hidden_size", type=int, default=64, help="Size of hidden layers in the policy network")
+    parser.add_argument("--history_length", type=int, default=1, help="Number of historical frames to use")
+    parser.add_argument("--use_ray", action="store_true", help="Whether to use Ray for distributed evaluation")
+    parser.add_argument("--num_cpus", type=int, default=None, help="Number of CPUs to use for Ray")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
+    parser.add_argument("--device", type=str, default="cpu", help="Device to run on (cpu, cuda, mps)")
+    parser.add_argument("--save_interval", type=int, default=10, help="Interval at which to save archive snapshots")
+    parser.add_argument("--reeval_interval", type=int, default=-1, help="Interval at which to re-evaluate all solutions in the archive on new random seeds, and re-insert (set to -1 to disable).")
+    parser.add_argument("--config", type=str, default="config/experiment_config_3.yaml", help="Path to the configuration file for the nof1 trading sim")
+    parser.add_argument("--log_level", type=str, default="WARNING", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    parser.add_argument("--eval", action="store_true", help="Whether to just evaluate the trained policies (then quit) instead of running evolution.")
+    parser.add_argument("--plot", action="store_true", help="Whether to just plot the (partial) archive animation (then quit) instead of running evolution.")
+    return parser
+
+
+if __name__ == "__main__":
+    parser = get_arg_parser()
+    args = parser.parse_args()
+    main(args)
