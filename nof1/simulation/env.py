@@ -512,7 +512,7 @@ class TradingEnvironment(gym.Env):
             self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
-                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                trade_pnl = (self.current_price - self.entry_price)*self.position
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct*2
                 slippage = self.entry_price*abs(self.position)*self.config.simulation.slippage_factor*2
                 self.realized_pnl += trade_pnl - commish - slippage
