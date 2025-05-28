@@ -1,8 +1,8 @@
 """
-Stonks: Training with Quality Diversity (QD) Optimization
+Nof1: Training with Quality Diversity (QD) Optimization
 =======================================================
 
-This module implements training of the Stonks environment using
+This module implements training of the Nof1 trading environment using
 Quality Diversity (QD) optimization with pyribs.
 """
 import glob
@@ -24,11 +24,13 @@ import ray
 import os
 import pickle
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
+import torchsummary
 
 from ribs.archives import GridArchive
 from ribs.emitters import EvolutionStrategyEmitter, GaussianEmitter
 from ribs.schedulers import Scheduler
-from viz_utils import grid_archive_heatmap
+from ribs.visualize import grid_archive_heatmap
+# from viz_utils import grid_archive_heatmap
 
 from nof1 import TradingEnvironment
 from nof1.simulation.env import HOLD, BUY, SELL, CLOSE
@@ -40,9 +42,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def init_env(args, random_start=True, test=False):
     config_manager = ConfigManager(args.config)
-    # config_manager.config.simulation.max_steps_per_episode = args.rollout_steps
     # config_manager.set("simulation.max_steps_per_episode", args.rollout_steps)
-    # config_manager.config.simulation.random_start = random_start
     # config_manager.set("simulation.random_start", random_start)
     data_reader = HistoricalDataReader(config_manager)
     (train_states, train_prices, train_atrs, train_timestamps, train_regimes), \
@@ -100,7 +100,7 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     # Convert all one-hot actions to indices in a single operation
     # Shape: [time_steps, batch_size, n_stocks, n_actions] -> [time_steps, batch_size, n_stocks]
     # action_indices_tensor = torch.cat([torch.argmax(a, dim=-1).unsqueeze(0) for a in all_actions], dim=0)
-    action_indices_tensor = torch.Tensor(all_actions)
+    # action_indices_tensor = torch.Tensor(all_actions)
     
     # Create masks for buy and sell actions in a single vectorized operation
     # These will be 1.0 where the condition is true, 0.0 elsewhere
@@ -114,7 +114,7 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     sell_counts = np.sum([info["action_label"] == "ShortEntry" for info in all_infos], axis=0)
     
     # Compute total actions
-    total_actions = rollout_steps
+    total_actions = len(all_states)
     # At most, the agent could buy/sell, then close at every other timestep
     total_buysell_opportunities = total_actions / 2
     
@@ -138,11 +138,16 @@ def evaluate_solution(solution, env: TradingEnvironment, policy, eval_repeats=16
     all_rewards = np.array(all_rewards)
     regime_a_rew = np.where(all_regimes == -1, all_rewards, 0).sum()
     regime_b_rew = np.where(all_regimes == 1, all_rewards, 0).sum()
-    relative_regime_perf = regime_a_rew / (regime_a_rew + regime_b_rew + 1e-6)
+    n_regime_a = np.sum(all_regimes == -1)
+    n_regime_b = np.sum(all_regimes == 1)
+    # print(f"Regime A reward: {regime_a_rew:,}, Regime B reward: {regime_b_rew:,}, n_regime_a: {n_regime_a:,}, n_regime_b: {n_regime_b:,}")
+    # relative_regime_perf = regime_a_rew / (regime_a_rew + regime_b_rew + 1e-6)
+    # print([i['action_label'] for i in all_infos], all_regimes, len(all_states))
     
     # Define behavioral measures (2D for grid archive)
     # measures = np.array([trade_activity, buy_sell_ratio, relative_regime_perf])
-    measures = np.array([trade_activity, buy_sell_ratio, relative_regime_perf])
+    # measures = np.array([trade_activity, buy_sell_ratio, relative_regime_perf])
+    measures = np.array([regime_a_rew, regime_b_rew])
     
     # Use mean portfolio value as the objective to maximize
     # objective = final_values.mean().item()
@@ -166,7 +171,7 @@ class RayEvaluator:
         self.env = init_env(args, random_start=not args.non_random_start, test=False)
         
         # Create policy network
-        self.policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
+        self.policy = FrameStackPolicyNetwork(n_feats=n_feats, n_actions=self.env.action_space.n, hidden_size=hidden_size, 
                                    device=self.device).to(self.device)
         
         # Put policy in evaluation mode
@@ -326,24 +331,27 @@ def train_qd(args,
     assert len(env.observation_space.shape) == 1, "Observation space must be 1D"
     
     # Create a policy network template (reused for efficiency)
-    policy = FrameStackPolicyNetwork(n_feats=n_features, hidden_size=hidden_size, 
+    policy = FrameStackPolicyNetwork(n_feats=n_features, n_actions=env.action_space.n, hidden_size=hidden_size, 
                                     # history_length=history_length,
                                     device=device).to(device)
+    print(torchsummary.summary(policy, input_size=(1,n_features,), device=device))  # Print model summary)
     
     # Put policy in evaluation mode
     policy.eval()
     
     # Count parameters in the network
     param_count = sum(p.numel() for p in policy.parameters())
-    print(f"Policy has {param_count} parameters")
+    print(f"Policy has {param_count:,} parameters")
     
     # Define the behavior characterization
     # 1. Trading Activity: How often the agent trades (buys/sells) vs holds
     # 2. Buy vs Sell Preference: Ratio of buys to sells
     behavior_bounds = [
-        (0.0, 1.0),  # Trading activity (0 = all holds, 1 = all trades)
-        (0.0, 1.0),  # Buy/Sell ratio (normalized)
-        (0.0, 1.0), # Relative regime performance (normalized)
+        # (0.0, 1.0),  # Trading activity (0 = all holds, 1 = all trades)
+        # (0.0, 1.0),  # Buy/Sell ratio (normalized)
+        # (0.0, 1.0), # Relative regime performance (normalized)
+        (-10_000, 10_000),  # Regime A reward (can be negative)
+        (-10_000, 10_000),  # Regime B reward (can be negative)
     ]
 
     def init_archive():
@@ -660,7 +668,7 @@ def save_checkpoint(scheduler, env, logs, output_dir, n_feats,
                 behavior = measures[idx]
                 
                 # Create a policy with these parameters
-                policy = FrameStackPolicyNetwork(n_feats==n_feats, hidden_size=hidden_size, 
+                policy = FrameStackPolicyNetwork(n_feats=n_feats, n_actions=env.action_space.n, hidden_size=hidden_size, 
                                             #    history_length=history_length,
                                             device=device).to(device)
                 
@@ -727,7 +735,7 @@ def plot_archive_heatmap(archive, iteration, save_dir, logs, random_seed, eval_m
     )
     
     # Enhance the heatmap appearance
-    fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:.2f}')
+    fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {max_objective:,.2f}')
     axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
     axes[0,0].set_ylabel('Buy/Sell Ratio')
     fig.supxlabel('Relative Regime Performance', ha='left')
@@ -865,17 +873,20 @@ def generate_plots(archive, iteration, logs, initial_capital, save_dir="figs", i
     # Plot the archive heatmap
     if len(archive) > 0:
         # Plot using pyribs built-in visualization
-        fig, axes, ax_right = grid_archive_heatmap(
+        # fig, axes, ax_right = grid_archive_heatmap(
+        grid_archive_heatmap(
             archive, 
-            # ax=axes[0], 
+            ax=axes[0], 
             cmap="viridis"
         )
         
         # Enhance the heatmap appearance
-        fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:.2f}')
-        axes[0,0].set_xlabel('Trading Activity (Buy+Sell %)')
-        axes[0,0].set_ylabel('Buy/Sell Ratio')
-        fig.supxlabel('Relative Regime Performance', ha='left')
+        fig.suptitle(f'Archive Grid (Iteration {iteration})\nMax Objective: {current_max_portfolio:,.2f}')
+        # axes[0].set_xlabel('Trading Activity (Buy+Sell %)')
+        # axes[0].set_ylabel('Buy/Sell Ratio')
+        axes[0].set_xlabel('Regime A Reward')
+        axes[0].set_ylabel('Regime B Reward')
+        # fig.supxlabel('Relative Regime Performance', ha='left')
         
         # Add grid for better readability
         for ax_i in axes.flatten():
@@ -886,6 +897,8 @@ def generate_plots(archive, iteration, logs, initial_capital, save_dir="figs", i
         # axes[0].text(0.5, 0.5, "Empty Archive", horizontalalignment='center', verticalalignment='center',
         #             transform=axes[0].transAxes)
         # axes[0].set_title('Archive Grid (Empty)')
+
+    ax_right = axes[1]
     
     # Plot QD metrics in one subplot
     # ax_right = axes[1]
@@ -1158,7 +1171,7 @@ def validate_diverse_policies(scheduler, env, n_feats=50, hidden_size=64,
         print(f"Trading Activity: {behavior[0]:.2f}, Buy/Sell Ratio: {behavior[1]:.2f}")
         
         # Create policy with these parameters
-        policy = FrameStackPolicyNetwork(n_feats=n_feats, hidden_size=hidden_size, 
+        policy = FrameStackPolicyNetwork(n_actions=env.action_space.n, n_feats=n_feats, hidden_size=hidden_size, 
                                         # history_length=history_length,
                                         device=device).to(device)
         
@@ -1276,9 +1289,6 @@ def get_exp_dir(args):
         f"_seed-{args.seed}"
     )
 
-N_ACTIONS = 3
-N_FEATS = 50
-
 
 def main(args):
     logging.basicConfig(level=args.log_level.upper())
@@ -1294,7 +1304,7 @@ def main(args):
     print(f"Batch size: {args.batch_size}")
     print(f"Using Ray for distributed evaluation: {args.use_ray}")
     print(f"Using frame stacking with {args.history_length} historical frames")
-    print(f"Using discrete action space with {N_ACTIONS} actions per stock (Buy, Hold, Sell)")
+    # print(f"Using discrete action space with {N_ACTIONS} actions per stock (Buy, Hold, Sell)")
     
     # Create directories for output
     # os.makedirs("models/qd", exist_ok=True)
@@ -1391,7 +1401,8 @@ def get_arg_parser():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Train diverse policies using Quality Diversity (QD) optimization.")
     parser.add_argument("--algorithm", type=str, default="ME", help="Algorithm to use (me, cmame)", choices=["ME", "CMAME"])
-    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10, 10], help="Size of the behavior grid (rows, cols)")
+    # parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10, 10], help="Size of the behavior grid (rows, cols)")
+    parser.add_argument("--archive_size", type=int, nargs=2, default=[10, 10], help="Size of the behavior grid (rows, cols)")
     parser.add_argument("--batch_size", type=int, default=30, help="Number of solutions to evaluate in each iteration")
     parser.add_argument("--num_iterations", type=int, default=200, help="Number of QD iterations to run")
     parser.add_argument("--rollout_steps", type=int, default=2000, help="Number of steps in each rollout")

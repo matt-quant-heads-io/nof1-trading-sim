@@ -786,14 +786,6 @@ class TradingEnvironment(gym.Env):
             
             # Take step in environment
             next_obs, reward, terminated, truncated, info = self.step(action)
-            if terminated or truncated:
-                # Then fill the rest of the trajectory with zeros
-                all_obs += [np.zeros_like(obs)] * (n_steps - len(all_obs))
-                all_actions += [np.zeros_like(action)] * (n_steps - len(all_actions))
-                all_rewards += [0] * (n_steps - len(all_rewards))
-                all_regimes += [0] * (n_steps - len(all_regimes))
-                all_infos += [{"action_label": None}] * (n_steps - len(all_infos))
-                break
                 
             all_rewards.append(reward)
             all_regimes.append(info['regime'])
@@ -805,5 +797,8 @@ class TradingEnvironment(gym.Env):
             # Update state
             obs = next_obs
             all_obs.append(obs)
+
+            if terminated or truncated:
+                break
         
         return total_rewards, all_obs, all_actions, all_rewards, all_regimes, all_infos

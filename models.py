@@ -3,15 +3,11 @@ from torch import nn
 from torch.nn import functional as F
 
 
-N_FEATURES = 50
-N_ACTIONS = 3
-DEFAULT_CASH = 10_000.0
-
 
 class FrameStackPolicyNetwork(nn.Module):
     """Discrete action policy network for the stock trading environment with frame stacking."""
     
-    def __init__(self, n_feats=N_FEATURES, hidden_size=64, device="cpu"):
+    def __init__(self, n_feats, n_actions, hidden_size=64, device="cpu"):
         """
         Initialize the policy network with frame stacking.
         
@@ -41,7 +37,7 @@ class FrameStackPolicyNetwork(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, N_ACTIONS),
+            nn.Linear(hidden_size, n_actions),
         )
     
     def forward(self, x):
