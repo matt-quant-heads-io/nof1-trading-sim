@@ -91,7 +91,7 @@ class TradingEnvironment(gym.Env):
         self.prices = prices 
         self.atrs = atrs
         self.timestamps = timestamps
-        self.capital = 10000
+        self.capital = self.config.risk.initial_capital
         self.returns = [self.capital]
         self.episode_rewards = []
         self.pt_atr_mult = self.config.simulation.pt_atr_mult
@@ -117,7 +117,7 @@ class TradingEnvironment(gym.Env):
             super().reset(seed=41)
             np.random.seed(seed)
 
-        self._step = random.randint(1, max(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1)) if self.config.simulation.random_start else 1
+        self._step = random.randint(1, len(self.states) - self.config.simulation.max_steps_per_episode - 1) if self.config.simulation.random_start else 1
         self._starting_step = self._step
         
         self.position = 0
@@ -130,13 +130,14 @@ class TradingEnvironment(gym.Env):
         self.profit_target = None
         self.stop_loss = None
         self.trade_blotter = []
-        self.capital = 10000
+        self.capital = self.config.risk.initial_capital
         self.returns = [self.capital]
         self.episode_rewards = []
         self.short_trade_wins = 0
         self.long_trade_wins = 0
         self.short_trades = 0
         self.long_trades = 0
+        self.entry_state_step =  - 1
         self._infos = []  # Reset the info history
         self.unrealized_pnl = 0.0
         self.realized_pnl = 0.0
@@ -315,7 +316,7 @@ class TradingEnvironment(gym.Env):
             self._step = len(self.states) - 1
 
         # If entry position (long or short)
-        if action != HOLD and self.position == 0:
+        if action != 0 and self.position == 0:
             # Buy entry
             is_entry = True
             self.entry_price = self.current_price
@@ -337,7 +338,7 @@ class TradingEnvironment(gym.Env):
                 import pdb; pdb.set_trace()
 
 
-            if action == BUY:
+            if action == 1:
                 action_label = "LongEntry"
                 self.long_trades += 1
                 self.position = float(min(self.initial_capital + self.unrealized_pnl + self.realized_pnl, self.config.risk.position_size_fixed_dollar) / self.entry_price) # float(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr)) if self.config.simulation.allow_fractional_position_size else int(self.config.simulation.position_size_fixed_dollar / (self.sl_atr_mult*self.atr))
@@ -384,7 +385,7 @@ class TradingEnvironment(gym.Env):
                 self.unrealized_pnl = 0.0
                 self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 1, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_next_state_step": self.entry_state_step + 1, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             # NOTE: Check if agent closed the position
-            elif action == CLOSE:
+            elif action == 3:
                 action_label = "LongExit"
                 reset_internals = True
                 trade_pnl = (self.current_price - self.entry_price)*self.position
@@ -412,7 +413,7 @@ class TradingEnvironment(gym.Env):
                 self.realized_pnl += trade_pnl - commish - slippage
                 self.unrealized_pnl = 0.0
                 # import pdb; pdb.set_trace()
-                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "exit_time": self.timestamps[self._step], "quantity": abs(self.position)})
+                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "exit_time": self.timestamps[self._step], "quantity": abs(self.position)})
             elif self.current_price >= self.stop_loss:
                 action_label = "ShortExit"
                 reset_internals = True
@@ -422,7 +423,7 @@ class TradingEnvironment(gym.Env):
                 self.realized_pnl += trade_pnl - commish - slippage
                 self.unrealized_pnl = 0.0
                 # import pdb; pdb.set_trace()
-                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
+                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             # NOTE: Check if agent closed the position
             elif action == 3:
                 action_label = "ShortExit"
@@ -432,7 +433,7 @@ class TradingEnvironment(gym.Env):
                 slippage = self.entry_price*abs(self.position)*self.config.simulation.slippage_factor*2
                 self.realized_pnl += trade_pnl - commish - slippage
                 self.unrealized_pnl = 0.0
-                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
+                self.trade_blotter.append({"terminal": False, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_state_step": self.entry_state_step, "entry_step": self.entry_step, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             else:
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct 
                 slippage = self.entry_price*abs(self.position)*self.config.simulation.slippage_factor
@@ -507,9 +508,9 @@ class TradingEnvironment(gym.Env):
             True if done, False otherwise
         """
         # Episode is done if we've reached max steps
-        if self._step >= self.max_steps:
+        if self._step >= self.max_steps - 1:
         # if self._step >= self.max_steps and self._starting_step < self.max_steps:
-            self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
+            self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step-1], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
                 trade_pnl = (self.current_price - self.entry_price)*self.position
@@ -520,7 +521,7 @@ class TradingEnvironment(gym.Env):
                     self.long_trade_wins += 1
             
                 self.unrealized_pnl = 0.0
-                self.trade_blotter.append({"terminal": True, "commish": commish, "slippage": slippage, "entry_action": 1, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
+                self.trade_blotter.append({"terminal": True, "commish": commish, "slippage": slippage, "entry_action": 1, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step-1], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             elif self.position < 0:
                 trade_pnl = (self.current_price - self.entry_price)*self.position
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct*2
@@ -531,7 +532,7 @@ class TradingEnvironment(gym.Env):
                     self.short_trade_wins += 1
             
                 self.unrealized_pnl = 0.0
-                self.trade_blotter.append({"terminal": True, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
+                self.trade_blotter.append({"terminal": True, "commish": commish, "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step-1], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
             
             self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
             self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
@@ -556,7 +557,7 @@ class TradingEnvironment(gym.Env):
             return True
         
         # Episode is done if we've reached the end of the data in historical mode
-        if self.mode == 'historical' and self.states is not None:
+        if self.mode == 'historical' and self._step >= len(self.states) -1:
             self.next_exit_state = np.append(self.states[self._step] if self._step <= len(self.states) - 1 else self.states[self._step], [self.position])
             self.next_exit_state_step = self._step
             if self._step >= len(self.states) - 1:
@@ -579,7 +580,7 @@ class TradingEnvironment(gym.Env):
                         self.short_trade_wins += 1
                 
                     self.unrealized_pnl = 0.0
-                    self.trade_blotter.append({"terminal": True, "commish": commish,  "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
+                    self.trade_blotter.append({"terminal": True, "commish": commish,  "slippage": slippage, "entry_action": 2, "exit_action": 3, "entry_time": self.entry_time, "entry_step": self.entry_step, "entry_state_step": self.entry_state_step, "next_entry_state_step": self.entry_state_step + 1, "entry_price": self.entry_price, "exit_step": self._step-1, "exit_price": self.current_price, "exit_time": self.timestamps[self._step], "pnl": trade_pnl, "exit_state_step": self._step-1, "next_exit_state_step": self.next_exit_state_step, "quantity": abs(self.position)})
                 
                 self.overall_win_pct = (self.short_trade_wins + self.long_trade_wins) / (self.short_trades + self.long_trades + 1e-5)
                 self.short_win_pct = self.short_trade_wins / (self.short_trades + 1e-5)
@@ -589,26 +590,27 @@ class TradingEnvironment(gym.Env):
                 self.returns.append(self.capital)
                 
                 
-                # df = pd.DataFrame.from_records(self.trade_blotter)
-                # if len(df) > 0:
-                #     episode_hash = uuid.uuid4().hex
-                #     df['entry_time'] = df['entry_time'].astype(str)
-                #     df['exit_time'] = df['exit_time'].astype(str)
-                #     df["episode_id"] = [episode_hash]*len(df)
-                #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+                df = pd.DataFrame.from_records(self.trade_blotter)
+                if len(df) > 0:
+                    episode_hash = uuid.uuid4().hex
+                    df['entry_time'] = df['entry_time'].astype(str)
+                    df['exit_time'] = df['exit_time'].astype(str)
+                    df["episode_id"] = [episode_hash]*len(df)
+                    # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                     
-                #     df_infos = pd.DataFrame.from_records(self._infos)
-                #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
-                #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                    df_infos = pd.DataFrame.from_records(self._infos)
+                    df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                    self.trade_stats = df_infos.to_dict()
+                    # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
                 
-                return True
+            return True
 
         # Episode is done if capital is depleted
         if self.capital <= 0:
             self.next_exit_state = np.append(self.states[self._step] if self._step < len(self.states) - 1 else self.states[self._step-1], [self.position])
             self.next_exit_state_step = self._step
             if self.position > 0:
-                trade_pnl = (self.profit_target - self.entry_price)*self.position
+                trade_pnl = (self.current_price - self.entry_price)*self.position
                 commish = self.entry_price*abs(self.position)*self.config.simulation.transaction_fee_pct*2
                 slippage = self.entry_price*abs(self.position)*self.config.simulation.slippage_factor*2
                 self.realized_pnl += trade_pnl - commish - slippage
@@ -636,16 +638,17 @@ class TradingEnvironment(gym.Env):
             self.returns.append(self.capital)
             
             df = pd.DataFrame.from_records(self.trade_blotter)
-            # if len(df) > 0:
-            #     episode_hash = uuid.uuid4().hex
-            #     df['entry_time'] = df['entry_time'].astype(str)
-            #     df['exit_time'] = df['exit_time'].astype(str)
-            #     df["episode_id"] = [episode_hash]*len(df)
-            #     df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
+            if len(df) > 0:
+                episode_hash = uuid.uuid4().hex
+                df['entry_time'] = df['entry_time'].astype(str)
+                df['exit_time'] = df['exit_time'].astype(str)
+                df["episode_id"] = [episode_hash]*len(df)
+                # df.to_csv(f"./results/trade_blotter_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_blotter_{self.run_id}.csv"), index=False)
                 
-            #     df_infos = pd.DataFrame.from_records(self._infos)
-            #     df_infos["episode_id"] = [episode_hash]*len(df_infos)
-            #     df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
+                df_infos = pd.DataFrame.from_records(self._infos)
+                df_infos["episode_id"] = [episode_hash]*len(df_infos)
+                self.trade_stats = df_infos.to_dict()
+                # df_infos.to_csv(f"./results/trade_stats_{self.run_id}.csv", mode='a', header=not os.path.exists(f"./results/trade_stats_{self.run_id}.csv"), index=False)
             
             return True
         
@@ -713,14 +716,18 @@ class TradingEnvironment(gym.Env):
         Returns:
             Vectorized environment
         """
+        from stable_baselines3.common.env_util import make_vec_env
         # Define a function to create a single environment
         def make_env():
             return TradingEnvironment(config, states=states, prices=prices, atrs=atrs, timestamps=timestamps, regimes=regimes)
         
         # Create a vectorized environment
-        envs = gym.vector.AsyncVectorEnv([lambda: make_env() for _ in range(num_envs)])
+        # envs = gym.vector.make([lambda: make_env() for _ in range(num_envs)])
+        vec_env = make_vec_env(
+            make_env, n_envs=20
+        )
         
-        return envs
+        return vec_env
 
     def _get_config_value(self, key_path: str, default_value: Any = None) -> Any:
         """
@@ -773,7 +780,6 @@ class TradingEnvironment(gym.Env):
         all_actions = []
         all_rewards = []
         all_regimes = []
-        all_infos = []
         
         # Accumulate total reward
         total_rewards = 0
@@ -786,10 +792,8 @@ class TradingEnvironment(gym.Env):
             
             # Take step in environment
             next_obs, reward, terminated, truncated, info = self.step(action)
-                
             all_rewards.append(reward)
             all_regimes.append(info['regime'])
-            all_infos.append(info)
             
             # Accumulate rewards
             total_rewards += reward
@@ -797,8 +801,5 @@ class TradingEnvironment(gym.Env):
             # Update state
             obs = next_obs
             all_obs.append(obs)
-
-            if terminated or truncated:
-                break
         
-        return total_rewards, all_obs, all_actions, all_rewards, all_regimes, all_infos
+        return total_rewards, all_obs, all_actions, all_rewards, all_regimes
